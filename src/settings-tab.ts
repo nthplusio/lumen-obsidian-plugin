@@ -16,6 +16,8 @@ import type { LogEntryListener } from './utils/logger';
 export class LumenSettingTab extends PluginSettingTab {
 	plugin: LumenPlugin;
 	private _activityLogListener: LogEntryListener | null = null;
+	private _lastSyncValueEl: HTMLElement | null = null;
+	private _syncStateValueEl: HTMLElement | null = null;
 
 	constructor(app: App, plugin: LumenPlugin) {
 		super(app, plugin);
@@ -212,11 +214,13 @@ export class LumenSettingTab extends PluginSettingTab {
 					.onClick(async () => {
 						button.setButtonText('Syncing...');
 						button.setDisabled(true);
+						this.refreshSyncInfo();
 						try {
 							await this.plugin.triggerSync();
 						} finally {
 							button.setButtonText('Sync Now');
 							button.setDisabled(false);
+							this.refreshSyncInfo();
 						}
 					})
 			)
@@ -371,23 +375,39 @@ export class LumenSettingTab extends PluginSettingTab {
 			text: 'Last sync:',
 			cls: 'lumen-sync-info-label',
 		});
-		lastSyncRow.createEl('span', {
+		this._lastSyncValueEl = lastSyncRow.createEl('span', {
 			text: lastSync ? formatRelativeTime(lastSync) : 'Never',
 			cls: 'lumen-sync-info-value',
 		});
 
 		// Current sync state (if not idle)
 		const state = this.plugin.syncManager?.getState();
-		if (state && state !== 'idle') {
-			const stateRow = infoEl.createEl('div', { cls: 'lumen-sync-info-row' });
-			stateRow.createEl('span', {
-				text: 'Status:',
-				cls: 'lumen-sync-info-label',
-			});
-			stateRow.createEl('span', {
-				text: state.charAt(0).toUpperCase() + state.slice(1),
-				cls: 'lumen-sync-info-value',
-			});
+		const stateRow = infoEl.createEl('div', { cls: 'lumen-sync-info-row' });
+		stateRow.createEl('span', {
+			text: 'Status:',
+			cls: 'lumen-sync-info-label',
+		});
+		this._syncStateValueEl = stateRow.createEl('span', {
+			text: state && state !== 'idle'
+				? state.charAt(0).toUpperCase() + state.slice(1)
+				: 'Idle',
+			cls: 'lumen-sync-info-value',
+		});
+	}
+
+	/** Refresh the sync info labels without re-rendering the whole tab. */
+	private refreshSyncInfo(): void {
+		if (this._lastSyncValueEl) {
+			const lastSync = this.plugin.settings.lastSyncAt;
+			this._lastSyncValueEl.textContent = lastSync
+				? formatRelativeTime(lastSync)
+				: 'Never';
+		}
+		if (this._syncStateValueEl) {
+			const state = this.plugin.syncManager?.getState();
+			this._syncStateValueEl.textContent = state && state !== 'idle'
+				? state.charAt(0).toUpperCase() + state.slice(1)
+				: 'Idle';
 		}
 	}
 
