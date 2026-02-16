@@ -1,8 +1,9 @@
 /**
  * Debug logging utility for the Lumen Obsidian plugin.
  *
- * Respects the debugMode setting — debug() calls are no-ops when
- * debugMode is false. info/warn/error always log.
+ * Respects the debugMode setting — debug() and info() console output
+ * is gated behind debugMode. warn/error always log to the console.
+ * All levels always write to the in-memory ring buffer.
  *
  * All messages are prefixed with "[Lumen]" for easy console filtering.
  *
@@ -110,7 +111,7 @@ export class Logger {
 		const message = this.formatArgs(args);
 		const redacted = redact(message);
 		this.addEntry('info', redacted);
-		console.log(PREFIX, redacted);
+		if (this.debugEnabled) console.log(PREFIX, redacted);
 	}
 
 	warn(...args: unknown[]): void {

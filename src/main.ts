@@ -100,7 +100,7 @@ export default class LumenPlugin extends Plugin {
 
 		// Register the search command (available via Ctrl/Cmd+P)
 		this.addCommand({
-			id: 'lumen-search',
+			id: 'search',
 			name: 'Search vault with Lumen',
 			callback: () => {
 				this.activateSearchView();
@@ -109,7 +109,7 @@ export default class LumenPlugin extends Plugin {
 
 		// Register the sync command
 		this.addCommand({
-			id: 'lumen-sync-now',
+			id: 'sync-now',
 			name: 'Sync vault with Lumen',
 			callback: () => {
 				this.triggerSync();
@@ -118,7 +118,7 @@ export default class LumenPlugin extends Plugin {
 
 		// Register the help command
 		this.addCommand({
-			id: 'lumen-help',
+			id: 'help',
 			name: 'Open Help',
 			callback: () => {
 				this.activateHelpView();
@@ -127,7 +127,7 @@ export default class LumenPlugin extends Plugin {
 
 		// Register the debug log command
 		this.addCommand({
-			id: 'lumen-debug-log',
+			id: 'debug-log',
 			name: 'Open Debug Log',
 			callback: () => {
 				this.activateDebugLogView();
@@ -136,7 +136,7 @@ export default class LumenPlugin extends Plugin {
 
 		// Register the "Find Similar Notes" command (active file)
 		this.addCommand({
-			id: 'lumen-find-similar',
+			id: 'find-similar',
 			name: 'Find similar notes',
 			checkCallback: (checking: boolean) => {
 				const file = this.app.workspace.getActiveFile();
