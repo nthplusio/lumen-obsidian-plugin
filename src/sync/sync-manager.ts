@@ -28,6 +28,7 @@ import { SyncClient } from './sync-client';
 import { ConflictLogger } from './conflict-logger';
 import { classifyError } from '../utils/error-classifier';
 import { logger } from '../utils/logger';
+import { isExcludedByPatterns } from '../utils/exclude-pattern';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -618,18 +619,8 @@ export class SyncManager {
 	// Helpers
 	// -----------------------------------------------------------------------
 
-	/**
-	 * Check if a path is excluded by the user's exclude patterns.
-	 * Uses the same pattern logic as FileHasher.
-	 */
 	private isExcluded(path: string): boolean {
-		return this.settings.excludePatterns.some((pattern) => {
-			const regexStr = pattern
-				.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-				.replace(/\*/g, '.*')
-				.replace(/\?/g, '.');
-			return new RegExp(`^${regexStr}`).test(path);
-		});
+		return isExcludedByPatterns(path, this.settings.excludePatterns);
 	}
 
 	private delay(ms: number): Promise<void> {

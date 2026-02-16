@@ -10,6 +10,7 @@
 import { Notice, Platform, TFile, Vault } from 'obsidian';
 import type { FileManifestEntry, LumenSettings } from '../types';
 import { logger } from '../utils/logger';
+import { isExcludedByPatterns } from '../utils/exclude-pattern';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -164,29 +165,8 @@ export class FileHasher {
 	// Private helpers
 	// -----------------------------------------------------------------------
 
-	/**
-	 * Check if a file path matches any exclude pattern from settings.
-	 *
-	 * Pattern rules:
-	 * - Trailing `/` → directory prefix match (e.g. `.obsidian/` matches `.obsidian/workspace.json`)
-	 * - `*` → any sequence of characters
-	 * - `?` → any single character
-	 * - All patterns are anchored at the start of the path.
-	 */
 	private isExcluded(path: string): boolean {
-		return this.settings.excludePatterns.some((pattern) =>
-			this.matchesPattern(path, pattern),
-		);
-	}
-
-	private matchesPattern(path: string, pattern: string): boolean {
-		// Convert simple glob to regex, anchored at start
-		const regexStr = pattern
-			.replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex specials (except * and ?)
-			.replace(/\*/g, '.*')
-			.replace(/\?/g, '.');
-
-		return new RegExp(`^${regexStr}`).test(path);
+		return isExcludedByPatterns(path, this.settings.excludePatterns);
 	}
 
 	/** Compute SHA-256 hash of a string using Web Crypto API. */
