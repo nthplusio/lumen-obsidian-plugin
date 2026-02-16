@@ -1,0 +1,178 @@
+/**
+ * SyncStatusBar — Status bar widget for vault sync progress.
+ *
+ * Renders in Obsidian's bottom status bar showing sync state
+ * with icon, text, and click-to-retry on errors.
+ */
+
+import { setIcon } from 'obsidian';
+import type { SyncState } from '../types';
+
+/** Lucide icon name per sync state */
+const STATE_ICONS: Record<SyncState, string> = {
+	idle: 'lumen-logo',
+	hashing: 'loader-2',
+	manifest: 'loader-2',
+	uploading: 'loader-2',
+	success: 'check-circle',
+	error: 'alert-triangle',
+};
+
+/** CSS modifier class per sync state */
+const STATE_CLASSES: Record<SyncState, string> = {
+	idle: 'lumen-sync-idle',
+	hashing: 'lumen-sync-active',
+	manifest: 'lumen-sync-active',
+	uploading: 'lumen-sync-active',
+	success: 'lumen-sync-success',
+	error: 'lumen-sync-error',
+};
+
+export class SyncStatusBar {
+	private containerEl: HTMLElement;
+	private iconEl: HTMLElement;
+	private textEl: HTMLElement;
+	private onRetry: () => void;
+	private lastSyncAt: string | null = null;
+	private currentState: SyncState = 'idle';
+	private lastFilesUploaded = 0;
+
+	constructor(statusBarEl: HTMLElement, onRetry: () => void) {
+		this.onRetry = onRetry;
+
+		this.containerEl = statusBarEl.createEl('span', {
+			cls: 'lumen-sync-status-bar lumen-sync-idle',
+			attr: {
+				role: 'status',
+				'aria-live': 'polite',
+				'aria-label': 'Lumen sync status',
+			},
+		});
+
+		this.iconEl = this.containerEl.createEl('span', { cls: 'lumen-sync-icon' });
+		setIcon(this.iconEl, STATE_ICONS.idle);
+
+		this.textEl = this.containerEl.createEl('span', { cls: 'lumen-sync-text' });
+		this.textEl.textContent = 'Lumen';
+
+		this.containerEl.addEventListener('click', this.handleClick);
+	}
+
+	/** Update display for a new sync state with optional progress. */
+	update(
+		state: SyncState,
+		progress?: { current: number; total: number; message?: string },
+	): void {
+		this.currentState = state;
+
+		// Update CSS classes
+		this.containerEl.className = `lumen-sync-status-bar ${STATE_CLASSES[state]}`;
+
+		// Update icon
+		this.iconEl.empty();
+		setIcon(this.iconEl, STATE_ICONS[state]);
+
+		// Track uploaded count for success message
+		if (state === 'uploading' && progress) {
+			this.lastFilesUploaded = progress.total;
+		}
+
+		// Update text
+		this.textEl.textContent = this.getStateText(state, progress);
+
+		// Update ARIA attributes
+		const isBusy = state === 'hashing' || state === 'manifest' || state === 'uploading';
+		this.containerEl.setAttribute('aria-busy', String(isBusy));
+		this.containerEl.setAttribute('aria-label', `Lumen sync: ${this.textEl.textContent}`);
+	}
+
+	/** Set the "last synced at" timestamp shown in idle state. */
+	setLastSyncAt(isoTimestamp: string): void {
+		this.lastSyncAt = isoTimestamp;
+		if (this.currentState === 'idle') {
+			this.textEl.textContent = this.getIdleText();
+		}
+	}
+
+	/** Show indexing progress after a sync triggers reindexing. */
+	showIndexingProgress(indexed: number, total: number, percent: number): void {
+		this.containerEl.className = 'lumen-sync-status-bar lumen-sync-active';
+		this.iconEl.empty();
+		setIcon(this.iconEl, 'database');
+		this.textEl.textContent = `Indexing: ${indexed}/${total} (${Math.round(percent)}%)`;
+		this.containerEl.setAttribute('aria-busy', 'true');
+		this.containerEl.setAttribute('aria-label', `Lumen: ${this.textEl.textContent}`);
+	}
+
+	/** Stop indexing display and return to idle state. */
+	stopIndexingDisplay(): void {
+		this.update('idle');
+	}
+
+	/** Clean up DOM and event listeners. */
+	destroy(): void {
+		this.containerEl.removeEventListener('click', this.handleClick);
+		this.containerEl.remove();
+	}
+
+	// -----------------------------------------------------------------------
+	// Private
+	// -----------------------------------------------------------------------
+
+	private handleClick = (): void => {
+		if (this.currentState === 'error') {
+			this.onRetry();
+		}
+	};
+
+	private getStateText(
+		state: SyncState,
+		progress?: { current: number; total: number; message?: string },
+	): string {
+		switch (state) {
+			case 'idle':
+				return this.getIdleText();
+			case 'hashing':
+				return progress
+					? `Hashing... ${progress.current}/${progress.total}`
+					: 'Hashing...';
+			case 'manifest':
+				return 'Preparing sync...';
+			case 'uploading':
+				return progress
+					? `Uploading ${progress.total} file(s)...`
+					: 'Uploading...';
+			case 'success':
+				return this.lastFilesUploaded > 0
+					? `Synced ${this.lastFilesUploaded} file(s)`
+					: 'Up to date';
+			case 'error':
+				return 'Sync failed (click to retry)';
+		}
+	}
+
+	private getIdleText(): string {
+		if (!this.lastSyncAt) return 'Lumen';
+		return `Last sync: ${formatRelativeTime(this.lastSyncAt)}`;
+	}
+}
+
+/** Format an ISO timestamp as relative time (e.g., "2 min ago"). */
+export function formatRelativeTime(isoTimestamp: string): string {
+	const diffMs = Date.now() - new Date(isoTimestamp).getTime();
+	if (isNaN(diffMs) || diffMs < 0) return 'just now';
+
+	const seconds = Math.floor(diffMs / 1000);
+	if (seconds < 60) return 'just now';
+
+	const minutes = Math.floor(seconds / 60);
+	if (minutes === 1) return '1 min ago';
+	if (minutes < 60) return `${minutes} min ago`;
+
+	const hours = Math.floor(minutes / 60);
+	if (hours === 1) return '1 hour ago';
+	if (hours < 24) return `${hours} hours ago`;
+
+	if (hours < 48) return 'yesterday';
+	return `${Math.floor(hours / 24)} days ago`;
+}

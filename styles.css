@@ -1,0 +1,1471 @@
+/* Lumen Search plugin styles */
+
+/* ============================================
+   Settings Tab
+   ============================================ */
+
+.lumen-status {
+	margin: 8px 0 4px 0;
+}
+
+.lumen-status-success {
+	color: var(--text-success);
+	font-size: var(--font-ui-small);
+	padding: 6px 12px;
+	border-radius: 4px;
+	background-color: var(--background-modifier-success);
+}
+
+.lumen-status-error {
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	padding: 6px 12px;
+	border-radius: 4px;
+	background-color: var(--background-modifier-error);
+}
+
+/* ============================================
+   Search Sidebar
+   ============================================ */
+
+.lumen-search-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Search input area */
+.lumen-search-area {
+	padding: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.lumen-input-wrapper {
+	display: flex;
+	align-items: center;
+	background-color: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 4px 8px;
+}
+
+.lumen-input-wrapper:focus-within {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.lumen-search-icon {
+	color: var(--text-faint);
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	margin-right: 6px;
+}
+
+.lumen-search-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.lumen-search-input {
+	flex: 1;
+	border: none;
+	background: transparent;
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	padding: 4px 0;
+	outline: none;
+}
+
+.lumen-search-input::placeholder {
+	color: var(--text-faint);
+}
+
+/* Search toolbar */
+.lumen-search-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.lumen-hybrid-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+}
+
+.lumen-hybrid-toggle:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.lumen-hybrid-toggle.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.lumen-hybrid-toggle svg {
+	width: 14px;
+	height: 14px;
+}
+
+.lumen-hybrid-label {
+	font-size: var(--font-ui-smaller);
+}
+
+/* Status bar */
+.lumen-search-status {
+	padding: 4px 12px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	flex-shrink: 0;
+	min-height: 20px;
+}
+
+.lumen-result-count {
+	font-weight: var(--font-semibold);
+}
+
+.lumen-searching {
+	font-style: italic;
+}
+
+/* Results container */
+.lumen-results {
+	flex: 1;
+	overflow-y: auto;
+	padding: 0 4px;
+}
+
+/* Individual result item */
+.lumen-result-item {
+	padding: 8px 8px;
+	margin: 2px 0;
+	border-radius: 4px;
+	cursor: pointer;
+	border: 1px solid transparent;
+}
+
+.lumen-result-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.lumen-result-item:active {
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* Title row (title + score) */
+.lumen-result-title-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 2px;
+}
+
+.lumen-result-title-left {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	overflow: hidden;
+	flex: 1;
+}
+
+.lumen-result-file-icon {
+	flex-shrink: 0;
+	color: var(--text-faint);
+	display: flex;
+	align-items: center;
+}
+
+.lumen-result-file-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.lumen-result-title {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Score badges with color coding */
+.lumen-result-score {
+	font-size: var(--font-ui-smaller);
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+	padding: 1px 6px;
+	border-radius: 8px;
+}
+
+.lumen-score-high {
+	color: var(--text-success);
+	background-color: var(--background-modifier-success);
+}
+
+.lumen-score-medium {
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.lumen-score-low {
+	color: var(--text-faint);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Chunk count badge */
+.lumen-result-chunks {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	flex-shrink: 0;
+	margin-left: 4px;
+}
+
+/* Document path */
+.lumen-result-path {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	margin-bottom: 4px;
+	padding-left: 18px;
+}
+
+/* Snippet text (markdown rendered) */
+.lumen-result-snippet {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	line-height: 1.4;
+	max-height: 4.2em;
+	overflow: hidden;
+	margin-bottom: 4px;
+	padding-left: 18px;
+}
+
+/* Reset markdown styles within snippets */
+.lumen-result-snippet p {
+	margin: 0;
+}
+
+.lumen-result-snippet h1,
+.lumen-result-snippet h2,
+.lumen-result-snippet h3,
+.lumen-result-snippet h4,
+.lumen-result-snippet h5,
+.lumen-result-snippet h6 {
+	font-size: var(--font-ui-small);
+	margin: 0;
+	font-weight: var(--font-semibold);
+}
+
+.lumen-result-snippet ul,
+.lumen-result-snippet ol {
+	margin: 0;
+	padding-left: 16px;
+}
+
+.lumen-result-snippet code {
+	font-size: 0.9em;
+}
+
+/* Highlighted query terms in snippet */
+.lumen-highlight {
+	background-color: var(--text-highlight-bg);
+	color: var(--text-normal);
+	padding: 0 1px;
+	border-radius: 2px;
+}
+
+/* Tags */
+.lumen-result-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 4px;
+	padding-left: 18px;
+}
+
+.lumen-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+	padding: 1px 6px;
+	border-radius: 10px;
+}
+
+.lumen-tag-icon {
+	display: flex;
+	align-items: center;
+}
+
+.lumen-tag-icon svg {
+	width: 10px;
+	height: 10px;
+}
+
+/* Modified date */
+.lumen-result-date {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	padding-left: 18px;
+	margin-top: 2px;
+}
+
+/* Empty state */
+.lumen-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40px 16px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.lumen-empty-icon {
+	margin-bottom: 12px;
+	color: var(--text-faint);
+}
+
+.lumen-empty-icon svg {
+	width: 32px;
+	height: 32px;
+}
+
+.lumen-empty-state p {
+	margin: 4px 0;
+}
+
+.lumen-empty-hint {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+/* Error state */
+.lumen-error-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 40px 16px;
+	text-align: center;
+}
+
+.lumen-error-icon {
+	margin-bottom: 8px;
+	color: var(--text-error);
+}
+
+.lumen-error-icon svg {
+	width: 28px;
+	height: 28px;
+}
+
+.lumen-error-title {
+	color: var(--text-error);
+	font-weight: var(--font-semibold);
+	margin: 4px 0;
+}
+
+.lumen-error-detail {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	margin-top: 4px;
+}
+
+/* Error action buttons container */
+.lumen-error-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 12px;
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+/* Retry button */
+.lumen-retry-button {
+	padding: 6px 16px;
+	border-radius: 4px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+
+.lumen-retry-button:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+/* Open Settings link button */
+.lumen-settings-link {
+	padding: 4px 12px;
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--text-accent);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+
+.lumen-settings-link:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* Test Connection button */
+.lumen-test-button {
+	padding: 4px 12px;
+	border-radius: 4px;
+	background-color: transparent;
+	color: var(--text-accent);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+
+.lumen-test-button:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* ============================================
+   Tags Filter Panel
+   ============================================ */
+
+/* Tags toggle button (mirrors hybrid toggle) */
+.lumen-tags-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+}
+
+.lumen-tags-toggle:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.lumen-tags-toggle.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.lumen-tags-toggle svg {
+	width: 14px;
+	height: 14px;
+}
+
+.lumen-tags-label {
+	font-size: var(--font-ui-smaller);
+}
+
+/* Collapsible panel */
+.lumen-tag-filter-panel {
+	margin-top: 6px;
+	padding: 6px 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.lumen-tag-filter-collapsed {
+	display: none;
+}
+
+/* Tag chips (selected tags) */
+.lumen-tag-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-bottom: 6px;
+}
+
+.lumen-tag-chips:empty {
+	margin-bottom: 0;
+}
+
+.lumen-tag-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px 6px;
+	border-radius: 10px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-smaller);
+	cursor: default;
+}
+
+.lumen-tag-chip-icon {
+	display: flex;
+	align-items: center;
+}
+
+.lumen-tag-chip-icon svg {
+	width: 10px;
+	height: 10px;
+}
+
+.lumen-tag-chip-text {
+	max-width: 120px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.lumen-tag-chip-remove {
+	display: flex;
+	align-items: center;
+	cursor: pointer;
+	border-radius: 50%;
+	margin-left: 2px;
+	opacity: 0.7;
+}
+
+.lumen-tag-chip-remove:hover {
+	opacity: 1;
+}
+
+.lumen-tag-chip-remove svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* Autocomplete input wrapper */
+.lumen-tag-input-wrapper {
+	position: relative;
+}
+
+.lumen-tag-autocomplete-input {
+	width: 100%;
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	outline: none;
+	box-sizing: border-box;
+}
+
+.lumen-tag-autocomplete-input:focus {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.lumen-tag-autocomplete-input::placeholder {
+	color: var(--text-faint);
+}
+
+/* Dropdown for autocomplete suggestions */
+.lumen-tag-dropdown {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	max-height: 200px;
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-top: none;
+	border-radius: 0 0 4px 4px;
+	z-index: 100;
+	box-shadow: 0 4px 12px var(--background-modifier-box-shadow);
+}
+
+.lumen-tag-dropdown-hidden {
+	display: none;
+}
+
+.lumen-tag-dropdown-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 8px;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+
+.lumen-tag-dropdown-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.lumen-tag-dropdown-name {
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.lumen-tag-dropdown-count {
+	flex-shrink: 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	margin-left: 8px;
+}
+
+/* ============================================
+   Similar Notes Modal
+   ============================================ */
+
+.lumen-similar-modal {
+	padding: 0;
+}
+
+.lumen-similar-header {
+	padding: 16px 20px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-similar-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.lumen-similar-title-row h2 {
+	margin: 0;
+	font-size: var(--font-ui-large);
+}
+
+.lumen-similar-title-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-accent);
+}
+
+.lumen-similar-title-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.lumen-similar-subtitle {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	margin: 4px 0 0;
+}
+
+.lumen-similar-results {
+	max-height: 500px;
+	overflow-y: auto;
+	padding: 8px 12px;
+}
+
+.lumen-similar-loading {
+	padding: 24px;
+	text-align: center;
+}
+
+.lumen-similar-item {
+	padding: 8px;
+	margin: 2px 0;
+	border-radius: 4px;
+	cursor: pointer;
+	border: 1px solid transparent;
+}
+
+.lumen-similar-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.lumen-similar-item-title-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 2px;
+}
+
+.lumen-similar-item-title-left {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	overflow: hidden;
+	flex: 1;
+}
+
+.lumen-similar-item-title {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.lumen-similar-item-path {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	margin-bottom: 4px;
+	padding-left: 18px;
+}
+
+.lumen-similar-item-snippet {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	line-height: 1.4;
+	max-height: 3em;
+	overflow: hidden;
+	margin-bottom: 4px;
+	padding-left: 18px;
+}
+
+.lumen-similar-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 32px 16px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.lumen-similar-error {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 32px 16px;
+	text-align: center;
+}
+
+/* ============================================
+   Sync Status Bar
+   ============================================ */
+
+.lumen-sync-status-bar {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	cursor: default;
+	font-size: var(--font-ui-smaller);
+	padding: 0 4px;
+}
+
+.lumen-sync-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.lumen-sync-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.lumen-sync-text {
+	white-space: nowrap;
+}
+
+/* State-specific styling */
+.lumen-sync-idle {
+	color: var(--text-muted);
+}
+
+.lumen-sync-active {
+	color: var(--interactive-accent);
+}
+
+.lumen-sync-active .lumen-sync-icon {
+	animation: lumen-spin 1.5s linear infinite;
+}
+
+.lumen-sync-success {
+	color: var(--text-success);
+}
+
+.lumen-sync-error {
+	color: var(--text-error);
+	cursor: pointer;
+}
+
+.lumen-sync-error:hover {
+	text-decoration: underline;
+}
+
+@keyframes lumen-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Settings — Collapsible Sections
+   ============================================ */
+
+.lumen-section-header {
+	cursor: pointer;
+	user-select: none;
+	padding: 8px 0;
+	font-weight: var(--font-semibold);
+	font-size: var(--font-ui-medium);
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-normal);
+	border-bottom: 1px solid var(--background-modifier-border);
+	margin-bottom: 8px;
+}
+
+.lumen-section-header:hover {
+	color: var(--text-accent);
+}
+
+.lumen-section-chevron {
+	display: inline-flex;
+	align-items: center;
+	transition: transform 150ms ease;
+	color: var(--text-faint);
+}
+
+.lumen-section-chevron svg {
+	width: 16px;
+	height: 16px;
+}
+
+.lumen-section-chevron-open {
+	transform: rotate(90deg);
+}
+
+.lumen-section-content {
+	margin-bottom: 16px;
+}
+
+.lumen-section-collapsed {
+	display: none;
+}
+
+/* ============================================
+   Settings — Exclude Patterns Editor
+   ============================================ */
+
+.lumen-exclude-list {
+	margin-top: 4px;
+	margin-bottom: 12px;
+}
+
+.lumen-exclude-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.lumen-exclude-input {
+	flex: 1;
+	padding: 4px 8px;
+	background: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-small);
+}
+
+.lumen-exclude-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.lumen-exclude-remove-btn {
+	padding: 4px 8px;
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+}
+
+.lumen-exclude-remove-btn:hover {
+	color: var(--text-error);
+	border-color: var(--text-error);
+}
+
+.lumen-exclude-add-btn {
+	padding: 4px 12px;
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	color: var(--text-accent);
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	margin-top: 4px;
+}
+
+.lumen-exclude-add-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* ============================================
+   Settings — Sync Info
+   ============================================ */
+
+.lumen-sync-info {
+	padding: 8px 0;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.lumen-sync-info-row {
+	display: flex;
+	justify-content: space-between;
+	padding: 2px 0;
+}
+
+.lumen-sync-info-label {
+	color: var(--text-muted);
+}
+
+.lumen-sync-info-value {
+	color: var(--text-normal);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+/* ============================================
+   Settings — Activity Log
+   ============================================ */
+
+.lumen-activity-log {
+	margin-top: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 8px;
+}
+
+.lumen-activity-log-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 6px;
+}
+
+.lumen-activity-log-title {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+.lumen-activity-log-entries {
+	max-height: 200px;
+	overflow-y: auto;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	background: var(--background-secondary);
+	border-radius: 4px;
+	padding: 4px 0;
+}
+
+.lumen-activity-entry {
+	display: flex;
+	gap: 8px;
+	padding: 2px 8px;
+	line-height: 1.5;
+}
+
+.lumen-activity-entry:hover {
+	background: var(--background-modifier-hover);
+}
+
+.lumen-activity-time {
+	flex-shrink: 0;
+	color: var(--text-faint);
+}
+
+.lumen-activity-msg {
+	word-break: break-word;
+}
+
+.lumen-activity-info {
+	color: var(--text-muted);
+}
+
+.lumen-activity-warn {
+	color: var(--text-normal);
+}
+
+.lumen-activity-error {
+	color: var(--text-error);
+}
+
+/* ============================================
+   Debug Log Viewer
+   ============================================ */
+
+.lumen-debug-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Header */
+.lumen-debug-header {
+	flex-shrink: 0;
+	padding: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-debug-title-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+
+.lumen-debug-title-row h3 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	flex: 1;
+}
+
+.lumen-debug-title-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.lumen-debug-title-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.lumen-debug-count {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* Controls row */
+.lumen-debug-controls {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.lumen-debug-filter {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.lumen-debug-filter-select {
+	padding: 2px 6px;
+	font-size: var(--font-ui-small);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+}
+
+.lumen-debug-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	font-size: var(--font-ui-smaller);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.lumen-debug-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.lumen-debug-btn svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* Scrollable log area */
+.lumen-debug-log {
+	flex: 1;
+	overflow-y: auto;
+	padding: 4px 0;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Single log entry */
+.lumen-debug-entry {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 2px 8px;
+	line-height: 1.5;
+}
+
+.lumen-debug-entry:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* Timestamp */
+.lumen-debug-ts {
+	flex-shrink: 0;
+	color: var(--text-faint);
+	font-size: 0.9em;
+}
+
+/* Level badges */
+.lumen-debug-badge {
+	flex-shrink: 0;
+	display: inline-block;
+	width: 42px;
+	text-align: center;
+	font-size: 0.8em;
+	font-weight: var(--font-semibold);
+	padding: 0 4px;
+	border-radius: 3px;
+}
+
+.lumen-debug-badge-debug {
+	color: var(--text-faint);
+	background: var(--background-modifier-hover);
+}
+
+.lumen-debug-badge-info {
+	color: var(--text-accent);
+	background: var(--background-modifier-hover);
+}
+
+.lumen-debug-badge-warn {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.lumen-debug-badge-error {
+	color: var(--text-on-accent);
+	background: var(--text-error);
+}
+
+/* Color coding for the whole row */
+.lumen-debug-level-warn {
+	color: var(--text-normal);
+}
+
+.lumen-debug-level-error {
+	color: var(--text-error);
+}
+
+/* Message text */
+.lumen-debug-msg {
+	flex: 1;
+	word-break: break-word;
+	white-space: pre-wrap;
+}
+
+/* ============================================
+   Help / Documentation View
+   ============================================ */
+
+.lumen-help-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Header */
+.lumen-help-header {
+	flex-shrink: 0;
+	padding: 12px 12px 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-help-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.lumen-help-title-row h2 {
+	margin: 0;
+	font-size: var(--font-ui-large);
+}
+
+.lumen-help-title-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-accent);
+}
+
+.lumen-help-title-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.lumen-help-subtitle {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	margin: 4px 0 0;
+}
+
+/* Scrollable body */
+.lumen-help-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 8px 12px 24px;
+}
+
+/* Table of contents */
+.lumen-help-toc {
+	margin-bottom: 16px;
+	padding: 8px 12px;
+	background: var(--background-secondary);
+	border-radius: 6px;
+}
+
+.lumen-help-toc h3 {
+	margin: 0 0 6px;
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
+
+.lumen-help-toc-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.lumen-help-toc-list li {
+	margin: 2px 0;
+}
+
+.lumen-help-toc-link {
+	color: var(--text-accent);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.lumen-help-toc-link:hover {
+	text-decoration: underline;
+}
+
+/* Section wrapper (for scroll-to targeting) */
+.lumen-help-section {
+	margin-bottom: 4px;
+}
+
+/* Section icon in header */
+.lumen-help-section-icon {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.lumen-help-section-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Content typography */
+.lumen-help-subheading {
+	margin: 12px 0 4px;
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.lumen-help-text {
+	margin: 4px 0 8px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	line-height: 1.5;
+}
+
+.lumen-help-list {
+	margin: 4px 0 8px;
+	padding-left: 20px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	line-height: 1.6;
+}
+
+/* Tip callout */
+.lumen-help-tip {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px 10px;
+	margin: 8px 0;
+	border-radius: 4px;
+	background: var(--background-secondary);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.lumen-help-tip-icon {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	color: var(--text-accent);
+}
+
+.lumen-help-tip-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Warning callout */
+.lumen-help-warning {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px 10px;
+	margin: 8px 0;
+	border-radius: 4px;
+	background: var(--background-modifier-error);
+	font-size: var(--font-ui-small);
+	color: var(--text-error);
+}
+
+.lumen-help-warning-icon {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+}
+
+.lumen-help-warning-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Score explanation table */
+.lumen-help-score-table {
+	margin: 8px 0;
+}
+
+.lumen-help-score-row {
+	display: flex;
+	gap: 12px;
+	padding: 4px 0;
+	font-size: var(--font-ui-small);
+	align-items: baseline;
+}
+
+.lumen-help-score-high {
+	flex-shrink: 0;
+	font-weight: var(--font-semibold);
+	color: var(--text-success);
+	min-width: 110px;
+}
+
+.lumen-help-score-medium {
+	flex-shrink: 0;
+	font-weight: var(--font-semibold);
+	color: var(--text-accent);
+	min-width: 110px;
+}
+
+.lumen-help-score-low {
+	flex-shrink: 0;
+	font-weight: var(--font-semibold);
+	color: var(--text-faint);
+	min-width: 110px;
+}
+
+/* Settings reference table */
+.lumen-help-settings-table {
+	margin: 8px 0;
+}
+
+.lumen-help-setting-row {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+}
+
+.lumen-help-setting-row strong {
+	color: var(--text-normal);
+}
+
+.lumen-help-setting-row span {
+	color: var(--text-muted);
+}
+
+/* Troubleshooting issues */
+.lumen-help-issue {
+	padding: 8px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-help-issue-title {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	margin-bottom: 4px;
+}
+
+.lumen-help-issue-cause {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.lumen-help-issue-fix {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+
+/* Keyboard shortcuts table */
+.lumen-help-shortcuts-table {
+	margin: 8px 0;
+}
+
+.lumen-help-shortcut-row {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 4px 0;
+}
+
+.lumen-help-command {
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-accent);
+	background: var(--background-modifier-hover);
+	padding: 1px 6px;
+	border-radius: 3px;
+	display: inline-block;
+}
+
+.lumen-help-shortcut-row > span {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
