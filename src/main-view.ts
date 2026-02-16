@@ -576,7 +576,7 @@ export class LumenMainView extends ItemView {
 			}
 
 			// Path (if different from title)
-			const displayPath = result.source_path.replace(/\.md$/, '');
+			const displayPath = this.stripWorkspacePrefix(result.source_path).replace(/\.md$/, '');
 			if (displayPath !== title) {
 				resultEl.createDiv({
 					text: displayPath,
@@ -667,7 +667,7 @@ export class LumenMainView extends ItemView {
 
 	/** Open a document in Obsidian by its vault-relative path */
 	private async openDocument(documentPath: string): Promise<void> {
-		const normalizedPath = documentPath.replace(/^\/+/, '');
+		const normalizedPath = this.stripWorkspacePrefix(documentPath.replace(/^\/+/, ''));
 
 		const file = this.app.vault.getAbstractFileByPath(normalizedPath);
 		if (file) {
@@ -691,6 +691,20 @@ export class LumenMainView extends ItemView {
 	/** Extract filename from a path */
 	private filenameFromPath(path: string): string {
 		return path.split('/').pop()?.replace(/\.md$/, '') ?? path;
+	}
+
+	/**
+	 * Strip a leading workspace UUID prefix from a server-returned path.
+	 *
+	 * The server stores files under `{workspace_id}/path/to/file.md` but the
+	 * Obsidian vault only has `path/to/file.md`. This detects the UUID prefix
+	 * and removes it so the path resolves correctly in the vault.
+	 */
+	private stripWorkspacePrefix(path: string): string {
+		return path.replace(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i,
+			'',
+		);
 	}
 
 	// --- Tags filter ---
