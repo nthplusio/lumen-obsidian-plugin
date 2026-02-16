@@ -405,12 +405,45 @@ export class LumenSettingTab extends PluginSettingTab {
 	private renderActivityLog(containerEl: HTMLElement): void {
 		const wrapper = containerEl.createEl('div', { cls: 'lumen-activity-log' });
 		const header = wrapper.createEl('div', { cls: 'lumen-activity-log-header' });
-		header.createEl('span', { text: 'Recent Activity', cls: 'lumen-activity-log-title' });
+		const titleEl = header.createEl('span', { cls: 'lumen-activity-log-title' });
+		const titleIcon = titleEl.createEl('span', { cls: 'lumen-activity-log-title-icon' });
+		setIcon(titleIcon, 'scroll-text');
+		titleEl.createEl('span', { text: 'Recent Activity' });
 
-		const openFullBtn = header.createEl('button', {
-			text: 'Open Full Log',
-			cls: 'lumen-debug-btn',
+		const actions = header.createEl('div', { cls: 'lumen-activity-log-actions' });
+
+		const copyLogBtn = actions.createEl('button', {
+			cls: 'lumen-activity-btn',
+			attr: { 'aria-label': 'Copy log to clipboard' },
 		});
+		const copyIcon = copyLogBtn.createEl('span', { cls: 'lumen-activity-btn-icon' });
+		setIcon(copyIcon, 'copy');
+		copyLogBtn.createEl('span', { text: 'Copy' });
+		copyLogBtn.addEventListener('click', () => {
+			const entries = logger.getEntries().filter(e => e.level !== 'debug');
+			const text = entries
+				.map(e => {
+					const t = new Date(e.timestamp).toLocaleTimeString();
+					return `${t} [${e.level.toUpperCase()}] ${e.message}`;
+				})
+				.join('\n');
+			navigator.clipboard.writeText(text).then(
+				() => {
+					new Notice('Activity log copied to clipboard');
+					copyLogBtn.classList.add('lumen-activity-btn-success');
+					setTimeout(() => copyLogBtn.classList.remove('lumen-activity-btn-success'), 1500);
+				},
+				() => new Notice('Failed to copy log to clipboard'),
+			);
+		});
+
+		const openFullBtn = actions.createEl('button', {
+			cls: 'lumen-activity-btn',
+			attr: { 'aria-label': 'Open full debug log' },
+		});
+		const fullIcon = openFullBtn.createEl('span', { cls: 'lumen-activity-btn-icon' });
+		setIcon(fullIcon, 'external-link');
+		openFullBtn.createEl('span', { text: 'Full Log' });
 		openFullBtn.addEventListener('click', () => {
 			this.plugin.activateDebugLogView();
 		});
@@ -451,6 +484,9 @@ export class LumenSettingTab extends PluginSettingTab {
 		row.createEl('span', {
 			text: time.toLocaleTimeString(),
 			cls: 'lumen-activity-time',
+		});
+		row.createEl('span', {
+			cls: `lumen-activity-level lumen-activity-level-${entry.level}`,
 		});
 		row.createEl('span', { text: entry.message, cls: 'lumen-activity-msg' });
 	}

@@ -139,8 +139,11 @@ export class SyncClient {
 	/**
 	 * Upload file contents as multipart/form-data.
 	 *
-	 * Uses native `fetch()` instead of Obsidian's `requestUrl` because
-	 * requestUrl does not correctly serialize FormData boundaries.
+	 * Uses Obsidian's `requestUrl` with a manually constructed multipart
+	 * body. We can't use native `fetch` because it's subject to CORS in
+	 * Electron's renderer, and we can't pass a FormData object to
+	 * `requestUrl` because it doesn't serialize boundaries correctly.
+	 * Instead we build the multipart payload as an ArrayBuffer ourselves.
 	 *
 	 * Protocol: each file is a form part where the field name is the
 	 * vault-relative path and the value is the file content.
@@ -156,44 +159,49 @@ export class SyncClient {
 
 		logger.debug('Uploading files:', { sessionId, fileCount: files.size });
 
-		const formData = new FormData();
-		formData.append('sync_session_id', sessionId);
+		const boundary = `----LumenUpload${Date.now()}${Math.random().toString(36).slice(2)}`;
+		const parts: string[] = [];
 
+		// Session ID as a plain form field
+		parts.push(
+			`--${boundary}\r\n` +
+			`Content-Disposition: form-data; name="sync_session_id"\r\n\r\n` +
+			`${sessionId}\r\n`,
+		);
+
+		// Each file as a file form field
 		for (const [path, content] of files) {
-			const blob = new Blob([content], { type: 'text/markdown' });
-			formData.append(path, blob, path);
+			parts.push(
+				`--${boundary}\r\n` +
+				`Content-Disposition: form-data; name="${path}"; filename="${path}"\r\n` +
+				`Content-Type: text/markdown\r\n\r\n` +
+				`${content}\r\n`,
+			);
 		}
 
-		// Native fetch — do NOT set Content-Type header; the browser adds
-		// the multipart boundary automatically.
-		let response: Response;
-		try {
-			response = await fetch(url, {
-				method: 'POST',
-				headers: { 'X-API-Key': this.apiKey },
-				body: formData,
-			});
-		} catch (err) {
-			// Handle network abort (navigated away, connection dropped mid-upload)
-			if (err instanceof DOMException && err.name === 'AbortError') {
-				logger.error('Upload aborted (network lost or navigated away):', {
-					sessionId,
-					filesAttempted: files.size,
-				});
-				throw new Error(
-					`Upload aborted: ${files.size} file(s) may have been partially sent. ` +
-					'The next sync will retry.',
-				);
-			}
-			throw err;
+		parts.push(`--${boundary}--\r\n`);
+
+		const body = parts.join('');
+		const encoder = new TextEncoder();
+		const bodyBuffer = encoder.encode(body).buffer;
+
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: {
+				'X-API-Key': this.apiKey,
+				'Content-Type': `multipart/form-data; boundary=${boundary}`,
+			},
+			body: bodyBuffer,
+		});
+
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(
+				`Upload failed: ${response.status} ${this.extractErrorMessage(response)}`,
+			);
 		}
 
-		if (!response.ok) {
-			const body = await response.text().catch(() => '');
-			throw new Error(`Upload failed: ${response.status} ${body}`);
-		}
-
-		const result = (await response.json()) as SyncUploadResponse;
+		const result = response.json as SyncUploadResponse;
 		logger.info('Upload complete:', {
 			accepted: result.accepted,
 			rejected: result.rejected,
