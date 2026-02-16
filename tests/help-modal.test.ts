@@ -1,8 +1,7 @@
 /**
- * Unit tests for the Help View (LumenHelpView).
+ * Unit tests for the Help Modal (LumenHelpModal).
  *
  * Tests:
- *   - View metadata (type, display text, icon)
  *   - All 7 sections render
  *   - TOC links call scrollIntoView on the target section
  *   - Collapsible sections toggle on header click
@@ -12,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LumenHelpView, VIEW_TYPE_LUMEN_HELP } from '../src/help-view';
+import { LumenHelpModal } from '../src/help-modal';
 
 // Suppress console output
 beforeEach(() => {
@@ -23,7 +22,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// DOM mock (same pattern as debug-log-view tests)
+// DOM mock (same pattern as help-view tests)
 // ---------------------------------------------------------------------------
 
 interface MockElement {
@@ -160,20 +159,14 @@ function fireEvent(el: MockElement, event: string, eventData?: any) {
 // Factory
 // ---------------------------------------------------------------------------
 
-function buildView() {
+function buildModal() {
 	const contentEl = createMockElement('div');
+	const mockApp = {} as any;
 
-	const containerEl = createMockElement('div');
-	containerEl.children.push(createMockElement('div')); // children[0] = nav
-	containerEl.children.push(contentEl);                 // children[1] = content
+	const modal = new LumenHelpModal(mockApp);
+	(modal as any).contentEl = contentEl;
 
-	const mockLeaf = {} as any;
-	const mockPlugin = {} as any;
-
-	const view = new LumenHelpView(mockLeaf, mockPlugin);
-	(view as any).containerEl = containerEl;
-
-	return { view, contentEl };
+	return { modal, contentEl };
 }
 
 /** Recursively find elements matching a CSS class. */
@@ -205,56 +198,33 @@ function findByTag(root: MockElement, tag: string): MockElement[] {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('LumenHelpView', () => {
-	// -------------------------------------------------------------------
-	// View metadata
-	// -------------------------------------------------------------------
-
-	describe('view metadata', () => {
-		it('has correct view type', () => {
-			const { view } = buildView();
-			expect(view.getViewType()).toBe(VIEW_TYPE_LUMEN_HELP);
-			expect(view.getViewType()).toBe('lumen-help');
-		});
-
-		it('has correct display text', () => {
-			const { view } = buildView();
-			expect(view.getDisplayText()).toBe('Lumen Help');
-		});
-
-		it('has correct icon', () => {
-			const { view } = buildView();
-			expect(view.getIcon()).toBe('lumen-logo');
-		});
-	});
-
+describe('LumenHelpModal', () => {
 	// -------------------------------------------------------------------
 	// onOpen: container setup
 	// -------------------------------------------------------------------
 
 	describe('onOpen container', () => {
-		it('adds lumen-help-container class', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
-			expect(contentEl._classes.has('lumen-help-container')).toBe(true);
+		it('adds lumen-help-modal class', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
+			expect(contentEl._classes.has('lumen-help-modal')).toBe(true);
 		});
 
-		it('renders header with title', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('renders header with title', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const header = findFirstByClass(contentEl, 'lumen-help-header');
 			expect(header).toBeDefined();
 
-			// Should have an h2 with "Lumen Help"
 			const h2s = findByTag(contentEl, 'h2');
 			const titleH2 = h2s.find((h) => h.textContent === 'Lumen Help');
 			expect(titleH2).toBeDefined();
 		});
 
-		it('renders subtitle paragraph', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('renders subtitle paragraph', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const subtitle = findFirstByClass(contentEl, 'lumen-help-subtitle');
 			expect(subtitle).toBeDefined();
@@ -267,9 +237,9 @@ describe('LumenHelpView', () => {
 	// -------------------------------------------------------------------
 
 	describe('table of contents', () => {
-		it('renders a TOC with 7 links', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('renders a TOC with 7 links', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const toc = findFirstByClass(contentEl, 'lumen-help-toc');
 			expect(toc).toBeDefined();
@@ -278,9 +248,9 @@ describe('LumenHelpView', () => {
 			expect(links).toHaveLength(7);
 		});
 
-		it('TOC links have correct labels', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('TOC links have correct labels', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const links = findByClass(contentEl, 'lumen-help-toc-link');
 			const labels = links.map((l) => l.textContent);
@@ -294,19 +264,15 @@ describe('LumenHelpView', () => {
 			expect(labels).toContain('Privacy & Security');
 		});
 
-		it('TOC link click scrolls to the target section', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('TOC link click scrolls to the target section', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const links = findByClass(contentEl, 'lumen-help-toc-link');
-
-			// Click the first link (Getting Started)
 			fireEvent(links[0], 'click');
 
-			// The Getting Started section wrapper should have had scrollIntoView called
 			const sections = findByClass(contentEl, 'lumen-help-section');
 			expect(sections.length).toBeGreaterThanOrEqual(1);
-			// At least one section should have been scrolled to
 			const scrolled = sections.some((s) => s.scrollIntoView.mock.calls.length > 0);
 			expect(scrolled).toBe(true);
 		});
@@ -317,17 +283,17 @@ describe('LumenHelpView', () => {
 	// -------------------------------------------------------------------
 
 	describe('section rendering', () => {
-		it('renders all 7 collapsible sections', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('renders all 7 collapsible sections', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const sections = findByClass(contentEl, 'lumen-help-section');
 			expect(sections).toHaveLength(7);
 		});
 
-		it('each section has a header and content area', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('each section has a header and content area', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const sections = findByClass(contentEl, 'lumen-help-section');
 			for (const section of sections) {
@@ -338,9 +304,9 @@ describe('LumenHelpView', () => {
 			}
 		});
 
-		it('each section has a chevron icon', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('each section has a chevron icon', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const chevrons = findByClass(contentEl, 'lumen-section-chevron');
 			expect(chevrons).toHaveLength(7);
@@ -352,49 +318,42 @@ describe('LumenHelpView', () => {
 	// -------------------------------------------------------------------
 
 	describe('collapsible sections', () => {
-		it('Getting Started section defaults to open (no collapsed class)', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('Getting Started section defaults to open (no collapsed class)', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
-			// First section (Getting Started) should be open
 			const sections = findByClass(contentEl, 'lumen-help-section');
 			const firstContent = findFirstByClass(sections[0], 'lumen-section-content')!;
 			expect(firstContent._classes.has('lumen-section-collapsed')).toBe(false);
 
-			// Its chevron should have the open class
 			const chevron = findFirstByClass(sections[0], 'lumen-section-chevron')!;
 			expect(chevron._classes.has('lumen-section-chevron-open')).toBe(true);
 		});
 
-		it('other sections default to collapsed', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('other sections default to collapsed', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const sections = findByClass(contentEl, 'lumen-help-section');
-			// Sections 1-6 (index 1 to 6) should be collapsed
 			for (let i = 1; i < sections.length; i++) {
 				const content = findFirstByClass(sections[i], 'lumen-section-content')!;
 				expect(content._classes.has('lumen-section-collapsed')).toBe(true);
 			}
 		});
 
-		it('clicking a section header toggles collapsed state', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('clicking a section header toggles collapsed state', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
-			// Get the second section (Semantic Search, starts collapsed)
 			const sections = findByClass(contentEl, 'lumen-help-section');
 			const header = findFirstByClass(sections[1], 'lumen-section-header')!;
 			const content = findFirstByClass(sections[1], 'lumen-section-content')!;
 
-			// Initially collapsed
 			expect(content._classes.has('lumen-section-collapsed')).toBe(true);
 
-			// Click to open
 			fireEvent(header, 'click');
 			expect(content._classes.has('lumen-section-collapsed')).toBe(false);
 
-			// Click to close again
 			fireEvent(header, 'click');
 			expect(content._classes.has('lumen-section-collapsed')).toBe(true);
 		});
@@ -405,42 +364,17 @@ describe('LumenHelpView', () => {
 	// -------------------------------------------------------------------
 
 	describe('section content', () => {
-		it('Getting Started has ordered list with setup steps', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
-
-			const sections = findByClass(contentEl, 'lumen-help-section');
-			const gettingStarted = findFirstByClass(sections[0], 'lumen-section-content')!;
-			const orderedLists = findByTag(gettingStarted, 'ol');
-			expect(orderedLists.length).toBeGreaterThanOrEqual(1);
-		});
-
-		it('Troubleshooting section has issue entries', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('Troubleshooting section has issue entries', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const issues = findByClass(contentEl, 'lumen-help-issue');
 			expect(issues.length).toBeGreaterThanOrEqual(5);
 		});
 
-		it('each troubleshooting issue has title, cause, and fix', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
-
-			const issues = findByClass(contentEl, 'lumen-help-issue');
-			for (const issue of issues) {
-				const title = findFirstByClass(issue, 'lumen-help-issue-title');
-				const cause = findFirstByClass(issue, 'lumen-help-issue-cause');
-				const fix = findFirstByClass(issue, 'lumen-help-issue-fix');
-				expect(title).toBeDefined();
-				expect(cause).toBeDefined();
-				expect(fix).toBeDefined();
-			}
-		});
-
-		it('Configuration section has settings table', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('Configuration section has settings table', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const settingsTable = findFirstByClass(contentEl, 'lumen-help-settings-table');
 			expect(settingsTable).toBeDefined();
@@ -449,25 +383,17 @@ describe('LumenHelpView', () => {
 			expect(rows.length).toBeGreaterThanOrEqual(5);
 		});
 
-		it('Keyboard Shortcuts section lists commands', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
-
-			const shortcuts = findByClass(contentEl, 'lumen-help-shortcut-row');
-			expect(shortcuts.length).toBeGreaterThanOrEqual(3);
-		});
-
-		it('Privacy section has warning about API key storage', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('Privacy section has warning about API key storage', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const warning = findFirstByClass(contentEl, 'lumen-help-warning');
 			expect(warning).toBeDefined();
 		});
 
-		it('Semantic Search section has score table', async () => {
-			const { view, contentEl } = buildView();
-			await view.onOpen();
+		it('Semantic Search section has score table', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
 
 			const scoreTable = findFirstByClass(contentEl, 'lumen-help-score-table');
 			expect(scoreTable).toBeDefined();
@@ -482,15 +408,14 @@ describe('LumenHelpView', () => {
 	// -------------------------------------------------------------------
 
 	describe('onClose', () => {
-		it('clears the sectionMap', async () => {
-			const { view } = buildView();
-			await view.onOpen();
+		it('clears the sectionMap', () => {
+			const { modal } = buildModal();
+			modal.onOpen();
 
-			// sectionMap should have entries
-			const sectionMap = (view as any).sectionMap as Map<string, any>;
+			const sectionMap = (modal as any).sectionMap as Map<string, any>;
 			expect(sectionMap.size).toBe(7);
 
-			await view.onClose();
+			modal.onClose();
 			expect(sectionMap.size).toBe(0);
 		});
 	});

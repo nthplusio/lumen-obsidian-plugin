@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LumenSearchView } from '../../src/search-view';
+import { LumenMainView } from '../../src/main-view';
 import { SimilarNotesModal } from '../../src/similar-notes-modal';
 import { createLumenAPI } from '../../src/dataview-api';
 import { SyncManager } from '../../src/sync/sync-manager';
@@ -279,7 +279,7 @@ describe('Integration: Search with tag filter', () => {
 			createElement: (tag: string) => ({ className: '', textContent: null, appendChild: () => {} }),
 		});
 
-		const view = new LumenSearchView({} as any, mockPlugin);
+		const view = new LumenMainView({} as any, mockPlugin);
 		(view as any).containerEl = containerEl;
 		(view as any).app = {
 			vault: { getAbstractFileByPath: vi.fn().mockReturnValue({ path: 'test.md' }) },

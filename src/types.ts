@@ -129,6 +129,24 @@ export interface SyncStatusResponse {
 	};
 }
 
+// ============================================================================
+// Chat Types
+// ============================================================================
+
+/** A single message in the chat conversation */
+export interface ChatMessage {
+	role: 'user' | 'assistant';
+	content: string;
+	sources?: string[];
+}
+
+/** Server response to a chat request */
+export interface ChatResponse {
+	content: string;
+	sources: string[];
+	conversation_id?: string;
+}
+
 /** Options for similar document search */
 export interface SimilarDocumentOptions {
 	limit?: number;

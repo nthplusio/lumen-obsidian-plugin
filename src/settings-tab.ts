@@ -8,6 +8,7 @@
 
 import { App, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type LumenPlugin from './main';
+import { LumenHelpModal } from './help-modal';
 import { formatRelativeTime } from './sync/sync-status-bar';
 import { logger } from './utils/logger';
 import type { LogEntryListener } from './utils/logger';
@@ -26,9 +27,18 @@ export class LumenSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl('h2', { text: 'Lumen Settings' });
-		containerEl.createEl('p', {
+
+		const subtitleRow = containerEl.createEl('div', { cls: 'lumen-settings-subtitle-row' });
+		subtitleRow.createEl('span', {
 			text: 'Connect your Obsidian vault to your Lumen server for AI-powered semantic search.',
 			cls: 'setting-item-description',
+		});
+		const docsBtn = subtitleRow.createEl('button', {
+			text: 'View Documentation',
+			cls: 'lumen-docs-button',
+		});
+		docsBtn.addEventListener('click', () => {
+			new LumenHelpModal(this.app).open();
 		});
 
 		this.renderConnectionSection(containerEl);

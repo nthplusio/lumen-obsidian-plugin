@@ -1,46 +1,29 @@
 /**
- * In-app Help / Documentation view for the Lumen plugin.
+ * Help / Documentation modal for the Lumen plugin.
  *
  * Provides a collapsible, scrollable reference covering setup,
  * semantic search, vault sync, configuration, troubleshooting,
- * keyboard shortcuts, and privacy.  Reuses the .lumen-section-*
- * CSS pattern established in SettingsTab (Week 3).
+ * keyboard shortcuts, and privacy.  Reuses the .lumen-help-*
+ * CSS pattern established in the original help view.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
-import type LumenPlugin from './main';
+import { Modal, setIcon } from 'obsidian';
+import type { App } from 'obsidian';
 
-export const VIEW_TYPE_LUMEN_HELP = 'lumen-help';
-
-export class LumenHelpView extends ItemView {
-	private plugin: LumenPlugin;
+export class LumenHelpModal extends Modal {
 	private sectionMap: Map<string, HTMLElement> = new Map();
 
-	constructor(leaf: WorkspaceLeaf, plugin: LumenPlugin) {
-		super(leaf);
-		this.plugin = plugin;
+	constructor(app: App) {
+		super(app);
 	}
 
-	getViewType(): string {
-		return VIEW_TYPE_LUMEN_HELP;
-	}
-
-	getDisplayText(): string {
-		return 'Lumen Help';
-	}
-
-	getIcon(): string {
-		return 'lumen-logo';
-	}
-
-	async onOpen(): Promise<void> {
-		const container = this.containerEl.children[1] as HTMLElement;
-		if (!container) return;
-		container.empty();
-		container.addClass('lumen-help-container');
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('lumen-help-modal');
 
 		// Header
-		const header = container.createDiv({ cls: 'lumen-help-header' });
+		const header = contentEl.createDiv({ cls: 'lumen-help-header' });
 		const titleRow = header.createDiv({ cls: 'lumen-help-title-row' });
 		const iconEl = titleRow.createSpan({ cls: 'lumen-help-title-icon' });
 		setIcon(iconEl, 'help-circle');
@@ -52,7 +35,7 @@ export class LumenHelpView extends ItemView {
 		});
 
 		// Scrollable body
-		const body = container.createDiv({ cls: 'lumen-help-body' });
+		const body = contentEl.createDiv({ cls: 'lumen-help-body' });
 
 		// Table of contents
 		this.renderTableOfContents(body);
@@ -67,8 +50,9 @@ export class LumenHelpView extends ItemView {
 		this.renderPrivacySecurity(body);
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): void {
 		this.sectionMap.clear();
+		this.contentEl.empty();
 	}
 
 	// -----------------------------------------------------------------------
@@ -112,7 +96,7 @@ export class LumenHelpView extends ItemView {
 	}
 
 	// -----------------------------------------------------------------------
-	// Collapsible Section Helper (mirrors SettingsTab pattern)
+	// Collapsible Section Helper
 	// -----------------------------------------------------------------------
 
 	private createSection(
@@ -331,7 +315,7 @@ export class LumenHelpView extends ItemView {
 		const shortcuts = [
 			['Lumen: Search vault with Lumen', 'Opens the semantic search sidebar.'],
 			['Lumen: Sync vault with Lumen', 'Triggers an immediate manual sync.'],
-			['Lumen: Open Help', 'Opens this help panel.'],
+			['Lumen: View documentation', 'Opens this help panel.'],
 		];
 
 		const table = content.createEl('div', { cls: 'lumen-help-shortcuts-table' });

@@ -6,7 +6,7 @@
  */
 
 import { requestUrl } from 'obsidian';
-import type { SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
+import type { ChatResponse, SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
 
 /**
  * REST API client bound to specific credentials.
@@ -112,6 +112,18 @@ export class ApiClient {
 			body: JSON.stringify(body),
 		});
 		return response.json as SearchResult[];
+	}
+
+	/** Chat with the vault (stub — returns placeholder until backend is ready) */
+	async chat(
+		_message: string,
+		_options: { conversation_id?: string } = {},
+	): Promise<ChatResponse> {
+		// TODO: Replace with POST /api/chat when backend is implemented
+		return {
+			content: 'Chat functionality is coming soon. Use the Search tab to find notes in your vault.',
+			sources: [],
+		};
 	}
 
 	/** Get all tags with document counts */

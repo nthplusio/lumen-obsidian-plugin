@@ -1,9 +1,10 @@
 /**
- * Unit tests for the Search Sidebar View (LumenSearchView).
+ * Unit tests for the Main Sidebar View (LumenMainView).
  *
  * Tests:
  *   - View metadata (type, display text, icon)
- *   - onOpen renders search input, status area, and empty state
+ *   - onOpen renders tab bar, search input, status area, and empty state
+ *   - Tab bar mode switching between search and chat
  *   - Debounce fires search after 300ms
  *   - Empty query clears results
  *   - Config error shown when apiUrl/apiKey missing
@@ -15,10 +16,11 @@
  *   - onClose clears debounce timer
  *   - Escape key blurs search input
  *   - Tags filter panel toggle, autocomplete, chips, search integration
+ *   - Chat empty state, message sending, loading, error display
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LumenSearchView, VIEW_TYPE_LUMEN_SEARCH } from '../src/search-view';
+import { LumenMainView, VIEW_TYPE_LUMEN_MAIN } from '../src/main-view';
 
 // ---------------------------------------------------------------------------
 // DOM mock: reusable Obsidian-style element factory
@@ -30,6 +32,9 @@ interface MockElement {
 	type: string;
 	placeholder: string;
 	value: string;
+	style: Record<string, string>;
+	scrollTop: number;
+	scrollHeight: number;
 	classList: {
 		add: ReturnType<typeof vi.fn>;
 		remove: ReturnType<typeof vi.fn>;
@@ -52,6 +57,7 @@ interface MockElement {
 	setAttribute: (name: string, value: string) => void;
 	getAttribute: (name: string) => string | null;
 	blur: ReturnType<typeof vi.fn>;
+	remove: ReturnType<typeof vi.fn>;
 	toggleClass: (cls: string, value: boolean) => void;
 }
 
@@ -67,6 +73,9 @@ function createMockElement(tag = 'div'): MockElement {
 		type: '',
 		placeholder: '',
 		value: '',
+		style: {},
+		scrollTop: 0,
+		scrollHeight: 0,
 		classList: {
 			add: vi.fn((...cls: string[]) => cls.forEach(c => classes.add(c))),
 			remove: vi.fn((...cls: string[]) => cls.forEach(c => classes.delete(c))),
@@ -135,6 +144,7 @@ function createMockElement(tag = 'div'): MockElement {
 		},
 
 		blur: vi.fn(),
+		remove: vi.fn(),
 
 		toggleClass(cls: string, value: boolean) {
 			if (value) classes.add(cls);
@@ -188,6 +198,7 @@ function buildView(opts: {
 	apiUrl?: string;
 	apiKey?: string;
 	searchFn?: (...args: any[]) => Promise<any>;
+	chatFn?: (...args: any[]) => Promise<any>;
 	testConnectionFn?: (...args: any[]) => Promise<any>;
 	listTagsFn?: (...args: any[]) => Promise<any>;
 } = {}) {
@@ -197,6 +208,11 @@ function buildView(opts: {
 	containerEl.children.push(contentEl);                 // children[1] = content
 
 	const searchFn = opts.searchFn ?? vi.fn().mockResolvedValue([]);
+
+	const chatFn = opts.chatFn ?? vi.fn().mockResolvedValue({
+		content: 'Chat functionality is coming soon.',
+		sources: [],
+	});
 
 	const testConnectionFn = opts.testConnectionFn ?? vi.fn().mockResolvedValue({
 		status: 'ok', version: '1.2.0', uptime_seconds: 3600, components: [], chunk_count: 100,
@@ -211,13 +227,14 @@ function buildView(opts: {
 		},
 		apiClient: {
 			semanticSearch: searchFn,
+			chat: chatFn,
 			testConnection: testConnectionFn,
 			listTags: listTagsFn,
 		},
 	} as any;
 
 	const mockLeaf = {} as any;
-	const view = new LumenSearchView(mockLeaf, mockPlugin);
+	const view = new LumenMainView(mockLeaf, mockPlugin);
 	(view as any).containerEl = containerEl;
 
 	// Mock app for openDocument and MarkdownRenderer
@@ -230,14 +247,14 @@ function buildView(opts: {
 		},
 	};
 
-	return { view, contentEl, mockPlugin, searchFn, testConnectionFn, listTagsFn };
+	return { view, contentEl, mockPlugin, searchFn, chatFn, testConnectionFn, listTagsFn };
 }
 
 /**
  * Directly invoke the private executeSearch method, bypassing debounce.
  * This lets us test rendering logic without timer complications.
  */
-async function executeSearchDirectly(view: LumenSearchView, query: string): Promise<void> {
+async function executeSearchDirectly(view: LumenMainView, query: string): Promise<void> {
 	await (view as any).executeSearch(query);
 }
 
@@ -274,7 +291,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe('LumenSearchView', () => {
+describe('LumenMainView', () => {
 	// -------------------------------------------------------------------
 	// View metadata
 	// -------------------------------------------------------------------
@@ -282,13 +299,13 @@ describe('LumenSearchView', () => {
 	describe('view metadata', () => {
 		it('has correct view type', () => {
 			const { view } = buildView();
-			expect(view.getViewType()).toBe(VIEW_TYPE_LUMEN_SEARCH);
-			expect(view.getViewType()).toBe('lumen-search-view');
+			expect(view.getViewType()).toBe(VIEW_TYPE_LUMEN_MAIN);
+			expect(view.getViewType()).toBe('lumen-main-view');
 		});
 
 		it('has correct display text', () => {
 			const { view } = buildView();
-			expect(view.getDisplayText()).toBe('Lumen Search');
+			expect(view.getDisplayText()).toBe('Lumen');
 		});
 
 		it('has correct icon', () => {
@@ -302,10 +319,43 @@ describe('LumenSearchView', () => {
 	// -------------------------------------------------------------------
 
 	describe('onOpen rendering', () => {
-		it('creates search container with correct class', async () => {
+		it('creates main container with correct class', async () => {
 			const { view, contentEl } = buildView();
 			await view.onOpen();
-			expect(contentEl._classes.has('lumen-search-container')).toBe(true);
+			expect(contentEl._classes.has('lumen-main-container')).toBe(true);
+		});
+
+		it('renders tab bar with Search and Chat tabs', async () => {
+			const { view, contentEl } = buildView();
+			await view.onOpen();
+
+			const tabBar = findFirstByClass(contentEl, 'lumen-tab-bar');
+			expect(tabBar).toBeDefined();
+
+			const tabs = findByClass(contentEl, 'lumen-tab');
+			expect(tabs).toHaveLength(2);
+
+			// First tab (Search) should be active by default
+			expect(tabs[0]._classes.has('lumen-tab-active')).toBe(true);
+			expect(tabs[1]._classes.has('lumen-tab-active')).toBe(false);
+		});
+
+		it('renders search view container', async () => {
+			const { view, contentEl } = buildView();
+			await view.onOpen();
+
+			const searchView = findFirstByClass(contentEl, 'lumen-search-view');
+			expect(searchView).toBeDefined();
+			expect(searchView!._classes.has('lumen-view-hidden')).toBe(false);
+		});
+
+		it('renders chat view container (hidden by default)', async () => {
+			const { view, contentEl } = buildView();
+			await view.onOpen();
+
+			const chatView = findFirstByClass(contentEl, 'lumen-chat-view');
+			expect(chatView).toBeDefined();
+			expect(chatView!._classes.has('lumen-view-hidden')).toBe(true);
 		});
 
 		it('renders search input area', async () => {
@@ -341,6 +391,47 @@ describe('LumenSearchView', () => {
 
 			const results = findFirstByClass(contentEl, 'lumen-results');
 			expect(results).toBeDefined();
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// Tab bar mode switching
+	// -------------------------------------------------------------------
+
+	describe('tab bar mode switching', () => {
+		it('switches to chat mode when chat tab is clicked', async () => {
+			const { view, contentEl } = buildView();
+			await view.onOpen();
+
+			const tabs = findByClass(contentEl, 'lumen-tab');
+			fireEvent(tabs[1], 'click'); // Chat tab
+
+			expect(tabs[1]._classes.has('lumen-tab-active')).toBe(true);
+			expect(tabs[0]._classes.has('lumen-tab-active')).toBe(false);
+
+			const searchView = findFirstByClass(contentEl, 'lumen-search-view')!;
+			const chatView = findFirstByClass(contentEl, 'lumen-chat-view')!;
+			expect(searchView._classes.has('lumen-view-hidden')).toBe(true);
+			expect(chatView._classes.has('lumen-view-hidden')).toBe(false);
+		});
+
+		it('switches back to search mode when search tab is clicked', async () => {
+			const { view, contentEl } = buildView();
+			await view.onOpen();
+
+			const tabs = findByClass(contentEl, 'lumen-tab');
+			// Switch to chat first
+			fireEvent(tabs[1], 'click');
+			// Switch back to search
+			fireEvent(tabs[0], 'click');
+
+			expect(tabs[0]._classes.has('lumen-tab-active')).toBe(true);
+			expect(tabs[1]._classes.has('lumen-tab-active')).toBe(false);
+
+			const searchView = findFirstByClass(contentEl, 'lumen-search-view')!;
+			const chatView = findFirstByClass(contentEl, 'lumen-chat-view')!;
+			expect(searchView._classes.has('lumen-view-hidden')).toBe(false);
+			expect(chatView._classes.has('lumen-view-hidden')).toBe(true);
 		});
 	});
 
@@ -1591,6 +1682,172 @@ describe('LumenSearchView', () => {
 				expect(dropdown._classes.has('lumen-tag-dropdown-hidden')).toBe(true);
 
 				vi.useRealTimers();
+			});
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// Chat UI
+	// -------------------------------------------------------------------
+
+	describe('chat', () => {
+		describe('empty state', () => {
+			it('renders chat empty state with icon and suggestions', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const emptyState = findFirstByClass(contentEl, 'lumen-chat-empty-state');
+				expect(emptyState).toBeDefined();
+
+				const title = findFirstByClass(contentEl, 'lumen-chat-empty-title');
+				expect(title?.textContent).toBe('Ask questions about your vault');
+
+				const suggestions = findByClass(contentEl, 'lumen-chat-suggestion');
+				expect(suggestions).toHaveLength(3);
+			});
+		});
+
+		describe('sending messages', () => {
+			it('sends message on Enter key', async () => {
+				const chatFn = vi.fn().mockResolvedValue({
+					content: 'Stub response',
+					sources: [],
+				});
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				const chatInput = (view as any).chatInput as MockElement;
+				chatInput.value = 'Hello vault';
+				fireEvent(chatInput, 'keydown', { key: 'Enter', shiftKey: false, preventDefault: () => {} });
+
+				await flushMicrotasks();
+
+				expect(chatFn).toHaveBeenCalledWith('Hello vault');
+			});
+
+			it('does not send on Shift+Enter', async () => {
+				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const { view } = buildView({ chatFn });
+				await view.onOpen();
+
+				const chatInput = (view as any).chatInput as MockElement;
+				chatInput.value = 'Hello';
+				fireEvent(chatInput, 'keydown', { key: 'Enter', shiftKey: true, preventDefault: () => {} });
+
+				await flushMicrotasks();
+
+				expect(chatFn).not.toHaveBeenCalled();
+			});
+
+			it('does not send empty message', async () => {
+				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const { view } = buildView({ chatFn });
+				await view.onOpen();
+
+				const chatInput = (view as any).chatInput as MockElement;
+				chatInput.value = '   ';
+				fireEvent(chatInput, 'keydown', { key: 'Enter', shiftKey: false, preventDefault: () => {} });
+
+				await flushMicrotasks();
+
+				expect(chatFn).not.toHaveBeenCalled();
+			});
+
+			it('adds user and assistant messages after send', async () => {
+				const chatFn = vi.fn().mockResolvedValue({
+					content: 'Chat functionality is coming soon.',
+					sources: [],
+				});
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				// Send a message directly
+				(view as any).chatInput.value = 'Test question';
+				await (view as any).sendChatMessage();
+
+				const messages = findByClass(contentEl, 'lumen-chat-message');
+				expect(messages.length).toBeGreaterThanOrEqual(2);
+
+				const userMsg = findFirstByClass(contentEl, 'lumen-chat-message-user');
+				expect(userMsg).toBeDefined();
+
+				const assistantMsg = findFirstByClass(contentEl, 'lumen-chat-message-assistant');
+				expect(assistantMsg).toBeDefined();
+			});
+
+			it('hides empty state after first message', async () => {
+				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				(view as any).chatInput.value = 'Test';
+				await (view as any).sendChatMessage();
+
+				const emptyState = findFirstByClass(contentEl, 'lumen-chat-empty-state');
+				expect(emptyState?._classes.has('lumen-view-hidden')).toBe(true);
+			});
+
+			it('clears input after send', async () => {
+				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const { view } = buildView({ chatFn });
+				await view.onOpen();
+
+				const chatInput = (view as any).chatInput as MockElement;
+				chatInput.value = 'Test question';
+				await (view as any).sendChatMessage();
+
+				expect(chatInput.value).toBe('');
+			});
+		});
+
+		describe('error handling', () => {
+			it('shows error message on chat failure', async () => {
+				const chatFn = vi.fn().mockRejectedValue(new Error('Network error'));
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				(view as any).chatInput.value = 'Test';
+				await (view as any).sendChatMessage();
+
+				const errorMsg = findFirstByClass(contentEl, 'lumen-chat-message-error');
+				expect(errorMsg).toBeDefined();
+			});
+		});
+
+		describe('suggested prompts', () => {
+			it('fills input and sends when suggestion is clicked', async () => {
+				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				const suggestions = findByClass(contentEl, 'lumen-chat-suggestion');
+				expect(suggestions.length).toBeGreaterThan(0);
+
+				// The click triggers sendChatMessage() which is async — need to wait
+				fireEvent(suggestions[0], 'click');
+
+				// Wait for the async sendChatMessage to complete
+				await flushMicrotasks();
+				await flushMicrotasks();
+
+				expect(chatFn).toHaveBeenCalled();
+			});
+		});
+
+		describe('sources', () => {
+			it('renders source chips for assistant messages with sources', async () => {
+				const chatFn = vi.fn().mockResolvedValue({
+					content: 'Here is what I found.',
+					sources: ['notes/project.md', 'notes/meeting.md'],
+				});
+				const { view, contentEl } = buildView({ chatFn });
+				await view.onOpen();
+
+				(view as any).chatInput.value = 'Test';
+				await (view as any).sendChatMessage();
+
+				const chips = findByClass(contentEl, 'lumen-chat-source-chip');
+				expect(chips).toHaveLength(2);
 			});
 		});
 	});

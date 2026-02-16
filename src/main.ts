@@ -8,8 +8,8 @@
 import { Menu, Notice, Plugin, TFile } from 'obsidian';
 import { registerLumenIcons } from './icons';
 import { ApiClient } from './api-client';
-import { LumenSearchView, VIEW_TYPE_LUMEN_SEARCH } from './search-view';
-import { LumenHelpView, VIEW_TYPE_LUMEN_HELP } from './help-view';
+import { LumenMainView, VIEW_TYPE_LUMEN_MAIN } from './main-view';
+import { LumenHelpModal } from './help-modal';
 import { LumenDebugLogView, VIEW_TYPE_LUMEN_DEBUG_LOG } from './debug-log-view';
 import { LumenSettingTab } from './settings-tab';
 import { SimilarNotesModal } from './similar-notes-modal';
@@ -67,16 +67,10 @@ export default class LumenPlugin extends Plugin {
 		// Initialize sync if configured
 		await this.initializeSync();
 
-		// Register the search sidebar view
+		// Register the main sidebar view (Search + Chat)
 		this.registerView(
-			VIEW_TYPE_LUMEN_SEARCH,
-			(leaf) => new LumenSearchView(leaf, this),
-		);
-
-		// Register the help view
-		this.registerView(
-			VIEW_TYPE_LUMEN_HELP,
-			(leaf) => new LumenHelpView(leaf, this),
+			VIEW_TYPE_LUMEN_MAIN,
+			(leaf) => new LumenMainView(leaf, this),
 		);
 
 		// Register the debug log view
@@ -88,22 +82,17 @@ export default class LumenPlugin extends Plugin {
 		// Register the settings tab
 		this.addSettingTab(new LumenSettingTab(this.app, this));
 
-		// Add ribbon icon to open search sidebar
-		this.addRibbonIcon('lumen-search', 'Lumen Search', () => {
-			this.activateSearchView();
-		});
-
-		// Add ribbon icon to open help
-		this.addRibbonIcon('lumen-logo', 'Lumen Help', () => {
-			this.activateHelpView();
+		// Add ribbon icon to open main sidebar
+		this.addRibbonIcon('lumen-search', 'Lumen', () => {
+			this.activateMainView();
 		});
 
 		// Register the search command (available via Ctrl/Cmd+P)
 		this.addCommand({
 			id: 'search',
-			name: 'Search vault with Lumen',
+			name: 'Open Lumen',
 			callback: () => {
-				this.activateSearchView();
+				this.activateMainView();
 			},
 		});
 
@@ -119,9 +108,9 @@ export default class LumenPlugin extends Plugin {
 		// Register the help command
 		this.addCommand({
 			id: 'help',
-			name: 'Open Help',
+			name: 'View documentation',
 			callback: () => {
-				this.activateHelpView();
+				new LumenHelpModal(this.app).open();
 			},
 		});
 
@@ -167,8 +156,7 @@ export default class LumenPlugin extends Plugin {
 		this.stopIndexingPoll();
 		this.syncStatusBar?.destroy();
 		this.syncManager?.destroy();
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_SEARCH);
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_HELP);
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_MAIN);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_DEBUG_LOG);
 	}
 
@@ -333,12 +321,12 @@ export default class LumenPlugin extends Plugin {
 		}
 	}
 
-	/** Activate the search sidebar view, creating it if needed */
-	async activateSearchView(): Promise<void> {
+	/** Activate the main sidebar view, creating it if needed */
+	async activateMainView(): Promise<void> {
 		const { workspace } = this.app;
 
 		// Check if already open
-		const existing = workspace.getLeavesOfType(VIEW_TYPE_LUMEN_SEARCH);
+		const existing = workspace.getLeavesOfType(VIEW_TYPE_LUMEN_MAIN);
 		if (existing.length > 0) {
 			// Reveal the existing view
 			workspace.revealLeaf(existing[0]!);
@@ -350,28 +338,7 @@ export default class LumenPlugin extends Plugin {
 		if (!leaf) return;
 
 		await leaf.setViewState({
-			type: VIEW_TYPE_LUMEN_SEARCH,
-			active: true,
-		});
-
-		workspace.revealLeaf(leaf);
-	}
-
-	/** Activate the help view, creating it if needed */
-	async activateHelpView(): Promise<void> {
-		const { workspace } = this.app;
-
-		const existing = workspace.getLeavesOfType(VIEW_TYPE_LUMEN_HELP);
-		if (existing.length > 0) {
-			workspace.revealLeaf(existing[0]!);
-			return;
-		}
-
-		const leaf = workspace.getRightLeaf(false);
-		if (!leaf) return;
-
-		await leaf.setViewState({
-			type: VIEW_TYPE_LUMEN_HELP,
+			type: VIEW_TYPE_LUMEN_MAIN,
 			active: true,
 		});
 

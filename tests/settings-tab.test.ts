@@ -32,6 +32,15 @@ vi.mock('obsidian', () => ({
 			this.plugin = plugin;
 		}
 	},
+	Modal: class {
+		app: any;
+		contentEl = { empty: vi.fn(), createEl: vi.fn(), createDiv: vi.fn(), addClass: vi.fn() };
+		constructor(app: any) { this.app = app; }
+		open = vi.fn();
+		close = vi.fn();
+		onOpen() {}
+		onClose() {}
+	},
 	Setting: class {
 		_name = '';
 		_desc = '';
