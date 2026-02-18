@@ -239,6 +239,17 @@ export default class LumenPlugin extends Plugin {
 			this.syncStatusBar?.update(state, progress);
 		});
 
+		// Handle sync completion — persist settings and poll indexing
+		this.syncManager.onSyncComplete(async (result) => {
+			await this.saveSettings();
+			if (this.settings.lastSyncAt) {
+				this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
+			}
+			if (result.success && result.filesUploaded > 0) {
+				this.pollIndexingStatus();
+			}
+		});
+
 		// Show last sync time if available
 		if (this.settings.lastSyncAt) {
 			this.syncStatusBar.setLastSyncAt(this.settings.lastSyncAt);
@@ -249,6 +260,11 @@ export default class LumenPlugin extends Plugin {
 		}
 
 		logger.info('Sync initialized');
+
+		// Check if the server is currently indexing (e.g. from a previous sync)
+		this.syncClient.getSyncStatus().then(status => {
+			if (status.indexing_status.active) this.pollIndexingStatus();
+		}).catch(() => {});
 	}
 
 	private isSyncConfigured(): boolean {
@@ -264,14 +280,8 @@ export default class LumenPlugin extends Plugin {
 
 		const result = await this.syncManager.syncNow();
 
-		// Persist updated cursor and lastSyncAt from the sync
-		await this.saveSettings();
-
-		// Update status bar with new sync timestamp
-		if (this.settings.lastSyncAt) {
-			this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
-		}
-
+		// Settings persistence, status bar update, and indexing poll
+		// are handled by the onSyncComplete callback in initializeSync().
 		if (result.success) {
 			const parts: string[] = [];
 			if (result.filesUploaded > 0) parts.push(`${result.filesUploaded} uploaded`);
@@ -283,11 +293,6 @@ export default class LumenPlugin extends Plugin {
 					? `Synced: ${parts.join(', ')}.`
 					: 'Vault is up to date.',
 			);
-
-			// Start polling indexing progress if files were uploaded
-			if (result.filesUploaded > 0) {
-				this.pollIndexingStatus();
-			}
 		} else if (result.errors.length > 0) {
 			new Notice(`Sync failed: ${result.errors[0]}`);
 		}

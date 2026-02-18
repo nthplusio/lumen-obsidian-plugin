@@ -81,6 +81,7 @@ export class SyncManager {
 	// Callbacks
 	private stateChangeCallbacks: StateChangeCallback[] = [];
 	private progressCallback: SyncProgressCallback | null = null;
+	private syncCompleteCallbacks: ((result: SyncResult) => void)[] = [];
 
 	constructor(
 		plugin: Plugin,
@@ -162,6 +163,11 @@ export class SyncManager {
 		this.progressCallback = callback;
 	}
 
+	/** Register a callback for sync completion (success or failure). */
+	onSyncComplete(callback: (result: SyncResult) => void): void {
+		this.syncCompleteCallbacks.push(callback);
+	}
+
 	/** Current sync state. */
 	getState(): SyncState {
 		return this.state;
@@ -178,6 +184,7 @@ export class SyncManager {
 		}
 		this.stateChangeCallbacks = [];
 		this.progressCallback = null;
+		this.syncCompleteCallbacks = [];
 		this.pendingChanges.clear();
 		this.deletedPaths.clear();
 		logger.info('SyncManager destroyed');
@@ -393,7 +400,7 @@ export class SyncManager {
 				`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted (${duration}ms)`,
 			);
 
-			return {
+			const result: SyncResult = {
 				success: true,
 				filesUploaded,
 				filesDownloaded,
@@ -402,6 +409,8 @@ export class SyncManager {
 				duration,
 				conflicts: conflicts.length > 0 ? conflicts : undefined,
 			};
+			this.notifySyncComplete(result);
+			return result;
 		} catch (error) {
 			const classified = classifyError(error);
 			const duration = Date.now() - startTime;
@@ -426,7 +435,7 @@ export class SyncManager {
 				new Notice(`Sync failed: ${classified.message}`);
 			}
 
-			return {
+			const result: SyncResult = {
 				success: false,
 				filesUploaded: 0,
 				filesDownloaded: 0,
@@ -434,6 +443,8 @@ export class SyncManager {
 				errors: [classified.message],
 				duration,
 			};
+			this.notifySyncComplete(result);
+			return result;
 		} finally {
 			this.syncInProgress = false;
 		}
@@ -853,6 +864,16 @@ export class SyncManager {
 	// -----------------------------------------------------------------------
 	// Helpers
 	// -----------------------------------------------------------------------
+
+	private notifySyncComplete(result: SyncResult): void {
+		for (const cb of this.syncCompleteCallbacks) {
+			try {
+				cb(result);
+			} catch {
+				// Don't let callback errors break the sync flow
+			}
+		}
+	}
 
 	private isExcluded(path: string): boolean {
 		return isExcludedByPatterns(path, this.settings.excludePatterns);

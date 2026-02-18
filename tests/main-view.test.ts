@@ -209,10 +209,12 @@ function buildView(opts: {
 
 	const searchFn = opts.searchFn ?? vi.fn().mockResolvedValue([]);
 
-	const chatFn = opts.chatFn ?? vi.fn().mockResolvedValue({
-		content: 'Chat functionality is coming soon.',
-		sources: [],
-	});
+	const chatFn = opts.chatFn ?? vi.fn().mockImplementation(
+		async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+			onToken('Chat functionality is coming soon.');
+			return { content: 'Chat functionality is coming soon.', sources: [] };
+		},
+	);
 
 	const testConnectionFn = opts.testConnectionFn ?? vi.fn().mockResolvedValue({
 		status: 'ok', version: '1.2.0', uptime_seconds: 3600, components: [], chunk_count: 100,
@@ -227,7 +229,8 @@ function buildView(opts: {
 		},
 		apiClient: {
 			semanticSearch: searchFn,
-			chat: chatFn,
+			chatStream: chatFn,
+			clearChatHistory: vi.fn().mockResolvedValue(undefined),
 			testConnection: testConnectionFn,
 			listTags: listTagsFn,
 		},
@@ -1709,10 +1712,12 @@ describe('LumenMainView', () => {
 
 		describe('sending messages', () => {
 			it('sends message on Enter key', async () => {
-				const chatFn = vi.fn().mockResolvedValue({
-					content: 'Stub response',
-					sources: [],
-				});
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('Stub response');
+						return { content: 'Stub response', sources: [] };
+					},
+				);
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1722,11 +1727,16 @@ describe('LumenMainView', () => {
 
 				await flushMicrotasks();
 
-				expect(chatFn).toHaveBeenCalledWith('Hello vault');
+				expect(chatFn).toHaveBeenCalledWith('Hello vault', expect.any(Array), expect.any(Function));
 			});
 
 			it('does not send on Shift+Enter', async () => {
-				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('x');
+						return { content: 'x', sources: [] };
+					},
+				);
 				const { view } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1740,7 +1750,12 @@ describe('LumenMainView', () => {
 			});
 
 			it('does not send empty message', async () => {
-				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('x');
+						return { content: 'x', sources: [] };
+					},
+				);
 				const { view } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1754,10 +1769,12 @@ describe('LumenMainView', () => {
 			});
 
 			it('adds user and assistant messages after send', async () => {
-				const chatFn = vi.fn().mockResolvedValue({
-					content: 'Chat functionality is coming soon.',
-					sources: [],
-				});
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('Chat functionality is coming soon.');
+						return { content: 'Chat functionality is coming soon.', sources: [] };
+					},
+				);
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1776,7 +1793,12 @@ describe('LumenMainView', () => {
 			});
 
 			it('hides empty state after first message', async () => {
-				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('x');
+						return { content: 'x', sources: [] };
+					},
+				);
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1788,7 +1810,12 @@ describe('LumenMainView', () => {
 			});
 
 			it('clears input after send', async () => {
-				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('x');
+						return { content: 'x', sources: [] };
+					},
+				);
 				const { view } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1802,7 +1829,7 @@ describe('LumenMainView', () => {
 
 		describe('error handling', () => {
 			it('shows error message on chat failure', async () => {
-				const chatFn = vi.fn().mockRejectedValue(new Error('Network error'));
+				const chatFn = vi.fn().mockRejectedValue(new Error('Network error')) as any;
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1816,7 +1843,12 @@ describe('LumenMainView', () => {
 
 		describe('suggested prompts', () => {
 			it('fills input and sends when suggestion is clicked', async () => {
-				const chatFn = vi.fn().mockResolvedValue({ content: 'x', sources: [] });
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('x');
+						return { content: 'x', sources: [] };
+					},
+				);
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 
@@ -1836,10 +1868,12 @@ describe('LumenMainView', () => {
 
 		describe('sources', () => {
 			it('renders source chips for assistant messages with sources', async () => {
-				const chatFn = vi.fn().mockResolvedValue({
-					content: 'Here is what I found.',
-					sources: ['notes/project.md', 'notes/meeting.md'],
-				});
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('Here is what I found.');
+						return { content: 'Here is what I found.', sources: ['notes/project.md', 'notes/meeting.md'] };
+					},
+				);
 				const { view, contentEl } = buildView({ chatFn });
 				await view.onOpen();
 

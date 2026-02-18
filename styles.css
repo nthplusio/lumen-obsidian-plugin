@@ -145,6 +145,38 @@
    Chat UI
    ============================================ */
 
+/* Chat header with actions */
+.lumen-chat-header {
+	display: flex;
+	justify-content: flex-end;
+	padding: 4px 8px;
+	flex-shrink: 0;
+}
+
+.lumen-chat-clear-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.lumen-chat-clear-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-error);
+}
+
+.lumen-chat-clear-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
 /* Messages area (scrollable) */
 .lumen-chat-messages {
 	flex: 1;
@@ -466,6 +498,11 @@
 
 .lumen-chat-loading-dot:nth-child(2) {
 	animation-delay: -0.16s;
+}
+
+/* Inline loading dots (inside streaming bubble) */
+.lumen-chat-loading-inline {
+	padding: 4px 0;
 }
 
 @keyframes lumen-chat-pulse {

@@ -240,6 +240,17 @@ export class LumenMainView extends ItemView {
 	// -----------------------------------------------------------------------
 
 	private renderChatView(container: HTMLElement): void {
+		// Header bar with clear button
+		const header = container.createDiv({ cls: 'lumen-chat-header' });
+		const clearBtn = header.createEl('button', {
+			cls: 'lumen-chat-clear-btn',
+			attr: { 'aria-label': 'Clear chat history' },
+		});
+		setIcon(clearBtn, 'trash-2');
+		clearBtn.addEventListener('click', () => {
+			this.clearChat();
+		});
+
 		// Messages area (scrollable)
 		this.chatMessagesContainer = container.createDiv({ cls: 'lumen-chat-messages' });
 
@@ -320,7 +331,7 @@ export class LumenMainView extends ItemView {
 		}
 	}
 
-	/** Send a chat message */
+	/** Send a chat message and stream the response via SSE */
 	private async sendChatMessage(): Promise<void> {
 		const message = this.chatInput?.value.trim();
 		if (!message || this.isChatSending) return;
@@ -328,7 +339,10 @@ export class LumenMainView extends ItemView {
 		// Hide empty state on first message
 		this.chatEmptyState?.addClass('lumen-view-hidden');
 
-		// Add user message
+		// Build history before adding current message (server receives it as `message`)
+		const history = this.chatMessages.map(m => ({ role: m.role, content: m.content }));
+
+		// Add user message to UI
 		this.addChatMessage({ role: 'user', content: message });
 
 		// Clear input
@@ -337,24 +351,120 @@ export class LumenMainView extends ItemView {
 			this.chatInput.style.height = 'auto';
 		}
 
-		// Show loading
-		const loadingEl = this.showChatLoading();
+		// Create an empty assistant bubble with loading dots
+		const { bubble, contentEl, loadingEl } = this.createAssistantBubble();
 
 		this.isChatSending = true;
+		let firstToken = true;
+		let streamedContent = '';
+
 		try {
-			const response = await this.plugin.apiClient.chat(message);
-			loadingEl?.remove();
-			this.addChatMessage({
+			const response = await this.plugin.apiClient.chatStream(
+				message,
+				history,
+				(token) => {
+					if (firstToken) {
+						loadingEl.remove();
+						firstToken = false;
+					}
+					streamedContent += token;
+					contentEl.textContent = streamedContent;
+					if (this.chatMessagesContainer) {
+						this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+					}
+				},
+			);
+
+			// Remove loading dots if no tokens arrived (e.g. empty response)
+			if (firstToken) loadingEl.remove();
+
+			// Re-render with proper markdown formatting
+			contentEl.empty();
+			await MarkdownRenderer.render(this.app, response.content, contentEl, '', this);
+
+			// Add source chips
+			if (response.sources.length > 0) {
+				this.renderChatSources(bubble, response.sources);
+			}
+
+			// Push completed message to chat history
+			this.chatMessages.push({
 				role: 'assistant',
 				content: response.content,
 				sources: response.sources,
 			});
+
+			if (this.chatMessagesContainer) {
+				this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+			}
 		} catch (err) {
-			loadingEl?.remove();
-			this.showChatError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+			if (firstToken) loadingEl.remove();
+			bubble.remove();
+
+			const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
+			if (errMsg.includes('subscription') || errMsg.includes('Upgrade')) {
+				this.showChatUpgradePrompt(errMsg);
+			} else {
+				this.showChatError(errMsg);
+			}
 		} finally {
 			this.isChatSending = false;
 		}
+	}
+
+	/** Create an empty assistant message bubble with loading dots for streaming */
+	private createAssistantBubble(): { bubble: HTMLElement; contentEl: HTMLElement; loadingEl: HTMLElement } {
+		if (!this.chatMessagesContainer) throw new Error('Chat container not initialized');
+
+		const bubble = this.chatMessagesContainer.createDiv({
+			cls: 'lumen-chat-message lumen-chat-message-assistant',
+		});
+
+		const header = bubble.createDiv({ cls: 'lumen-chat-message-header' });
+		const roleIcon = header.createSpan({ cls: 'lumen-chat-message-icon' });
+		setIcon(roleIcon, 'bot');
+		header.createSpan({ text: 'Lumen', cls: 'lumen-chat-message-role' });
+
+		const contentEl = bubble.createDiv({ cls: 'lumen-chat-message-content' });
+
+		const loadingEl = bubble.createDiv({ cls: 'lumen-chat-loading-inline' });
+		const dots = loadingEl.createDiv({ cls: 'lumen-chat-loading-dots' });
+		dots.createSpan({ cls: 'lumen-chat-loading-dot' });
+		dots.createSpan({ cls: 'lumen-chat-loading-dot' });
+		dots.createSpan({ cls: 'lumen-chat-loading-dot' });
+
+		this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+		return { bubble, contentEl, loadingEl };
+	}
+
+	/** Show upgrade prompt when chat requires a higher-tier plan */
+	private showChatUpgradePrompt(message: string): void {
+		if (!this.chatMessagesContainer) return;
+
+		const bubble = this.chatMessagesContainer.createDiv({
+			cls: 'lumen-chat-message lumen-chat-message-error',
+		});
+
+		const header = bubble.createDiv({ cls: 'lumen-chat-message-header' });
+		const icon = header.createSpan({ cls: 'lumen-chat-message-icon lumen-chat-error-icon' });
+		setIcon(icon, 'lock');
+		header.createSpan({ text: 'Upgrade Required', cls: 'lumen-chat-message-role' });
+
+		bubble.createDiv({ cls: 'lumen-chat-message-content' }).createEl('p', { text: message });
+
+		this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+	}
+
+	/** Clear all chat messages and reset to empty state */
+	private clearChat(): void {
+		this.chatMessages = [];
+		if (this.chatMessagesContainer) {
+			this.chatMessagesContainer.empty();
+			this.chatEmptyState = this.chatMessagesContainer.createDiv({ cls: 'lumen-chat-empty-state' });
+			this.showChatEmptyState();
+		}
+		// Best-effort server-side clear
+		this.plugin.apiClient.clearChatHistory().catch(() => {});
 	}
 
 	/** Add a message bubble to the chat */
