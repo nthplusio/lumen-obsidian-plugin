@@ -117,9 +117,14 @@ export class ApiClient {
 	}
 
 	/**
-	 * Stream a chat response via SSE.
-	 * Uses native fetch (not requestUrl) for ReadableStream SSE consumption.
-	 * @param onToken Called for each content token as it arrives
+	 * Chat with the vault via SSE.
+	 *
+	 * Uses Obsidian's `requestUrl` (CORS-safe in Electron) which buffers
+	 * the full SSE response. Tokens are replayed via onToken after the
+	 * server finishes. The streaming API surface is preserved so we can
+	 * switch to real streaming if Electron adds ReadableStream support.
+	 *
+	 * @param onToken Called for each content token parsed from the SSE response
 	 * @returns Completed response with full content and sources
 	 */
 	async chatStream(
@@ -130,79 +135,44 @@ export class ApiClient {
 		const url = `${this.baseUrl}/api/chat`;
 		logger.info(`Chat request → POST ${url} (history: ${history.length} messages)`);
 
-		let response: Response;
+		let responseText: string;
 		try {
-			response = await fetch(url, {
+			const response = await requestUrl({
+				url,
 				method: 'POST',
 				headers: this.headers,
 				body: JSON.stringify({ message, history }),
 			});
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			logger.error(`Chat fetch failed (network): ${msg}`);
-			throw err;
-		}
-
-		logger.info(`Chat response: ${response.status} ${response.statusText}, content-type: ${response.headers.get('content-type')}`);
-
-		if (response.status === 403) {
-			const body = await response.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>;
-			const plan = (body['required_plan'] as string) ?? 'Plus';
-			const err = new Error(`AI Chat requires a ${plan} subscription. Upgrade in your Lumen dashboard.`);
-			logger.warn(`Chat 403: ${err.message}`);
-			throw err;
-		}
-
-		if (!response.ok) {
-			// Try to read the error body for diagnostics
-			const errorBody = await response.text().catch(() => '(unreadable)');
-			logger.error(`Chat HTTP error: ${response.status} ${response.statusText} — body: ${errorBody.slice(0, 500)}`);
-			throw new Error(`Chat request failed: ${response.status} ${response.statusText}`);
-		}
-
-		const reader = response.body?.getReader();
-		if (!reader) {
-			logger.error('Chat response has no readable body (response.body is null)');
-			throw new Error('No response stream available');
-		}
-
-		const decoder = new TextDecoder();
-		let buffer = '';
-		let fullContent = '';
-		let finalSources: string[] = [];
-		let chunkCount = 0;
-
-		try {
-			while (true) {
-				const { done: streamDone, value } = await reader.read();
-				if (streamDone) {
-					logger.debug(`Chat SSE stream ended (EOF) after ${chunkCount} chunks, ${fullContent.length} chars`);
-					break;
-				}
-
-				chunkCount++;
-				const chunk = decoder.decode(value, { stream: true });
-				logger.debug(`Chat SSE chunk #${chunkCount}: ${chunk.length} bytes`);
-				buffer += chunk;
-				const result = parseSSEBuffer(buffer);
-				buffer = result.remaining;
-
-				for (const token of result.tokens) {
-					fullContent += token;
-					onToken(token);
-				}
-
-				if (result.done) {
-					finalSources = result.sources;
-					logger.info(`Chat stream complete: ${fullContent.length} chars, ${finalSources.length} sources`);
-					break;
-				}
+			responseText = response.text;
+			logger.info(`Chat response: ${response.status}, ${responseText.length} bytes`);
+		} catch (err: unknown) {
+			// requestUrl throws for HTTP errors — extract status if available
+			const httpErr = err as { status?: number; text?: string; json?: Record<string, unknown> };
+			if (httpErr.status === 403) {
+				const body = httpErr.json ?? {};
+				const plan = (body['required_plan'] as string) ?? 'Plus';
+				const msg = `AI Chat requires a ${plan} subscription. Upgrade in your Lumen dashboard.`;
+				logger.warn(`Chat 403: ${msg}`);
+				throw new Error(msg);
 			}
-		} finally {
-			reader.releaseLock();
+			const msg = err instanceof Error ? err.message : String(err);
+			logger.error(`Chat request failed: ${httpErr.status ?? 'network'} — ${msg}`);
+			throw err;
 		}
 
-		return { content: fullContent, sources: finalSources };
+		// Parse all SSE events from the buffered response and replay tokens
+		const parseResult = parseSSEBuffer(
+			responseText.endsWith('\n') ? responseText : responseText + '\n',
+		);
+
+		let fullContent = '';
+		for (const token of parseResult.tokens) {
+			fullContent += token;
+			onToken(token);
+		}
+
+		logger.info(`Chat complete: ${fullContent.length} chars, ${parseResult.sources.length} sources`);
+		return { content: fullContent, sources: parseResult.sources };
 	}
 
 	/** Fetch chat history from the server */
