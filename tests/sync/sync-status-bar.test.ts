@@ -565,22 +565,26 @@ describe('SyncStatusBar', () => {
 			bar.showIndexingProgress(100, 100, 100);
 			expect(getTextEl(statusBarEl).textContent).toBe('Indexing: 100/100 (100%)');
 		});
-	});
 
-	describe('stopIndexingDisplay', () => {
-		it('resets to idle state', () => {
-			bar.showIndexingProgress(50, 100, 50);
-			bar.stopIndexingDisplay();
-			expect(getContainer(statusBarEl).className).toContain('lumen-sync-idle');
-			expect(getTextEl(statusBarEl).textContent).toBe('Lumen');
+		it('shows "Server reindexing" when serverTriggered is true', () => {
+			bar.showIndexingProgress(30, 200, 15, true);
+			expect(getTextEl(statusBarEl).textContent).toBe('Server reindexing: 30/200 (15%)');
 		});
 
-		it('shows last sync time if set before indexing', () => {
-			vi.setSystemTime(new Date('2026-02-13T12:05:00Z'));
-			bar.setLastSyncAt('2026-02-13T12:00:00Z');
-			bar.showIndexingProgress(50, 100, 50);
-			bar.stopIndexingDisplay();
-			expect(getTextEl(statusBarEl).textContent).toBe('Last sync: 5 min ago');
+		it('shows "Indexing" when serverTriggered is false', () => {
+			bar.showIndexingProgress(30, 200, 15, false);
+			expect(getTextEl(statusBarEl).textContent).toBe('Indexing: 30/200 (15%)');
+		});
+
+		it('shows "Indexing" when serverTriggered is omitted', () => {
+			bar.showIndexingProgress(30, 200, 15);
+			expect(getTextEl(statusBarEl).textContent).toBe('Indexing: 30/200 (15%)');
+		});
+
+		it('sets correct aria-label for server-triggered indexing', () => {
+			bar.showIndexingProgress(10, 50, 20, true);
+			expect(getContainer(statusBarEl).getAttribute('aria-label'))
+				.toBe('Lumen: Server reindexing: 10/50 (20%)');
 		});
 	});
 });

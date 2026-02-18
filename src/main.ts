@@ -34,6 +34,8 @@ export default class LumenPlugin extends Plugin {
 	fileHasher: FileHasher | null = null;
 	conflictLogger: ConflictLogger | null = null;
 	private indexingPollTimer: ReturnType<typeof setInterval> | null = null;
+	private backgroundPollTimer: ReturnType<typeof setInterval> | null = null;
+	private pluginTriggeredIndexing = false;
 
 	async onload(): Promise<void> {
 		registerLumenIcons();
@@ -153,6 +155,7 @@ export default class LumenPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.stopBackgroundPoll();
 		this.stopIndexingPoll();
 		this.syncStatusBar?.destroy();
 		this.syncManager?.destroy();
@@ -246,6 +249,7 @@ export default class LumenPlugin extends Plugin {
 				this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
 			}
 			if (result.success && result.filesUploaded > 0) {
+				this.pluginTriggeredIndexing = true;
 				this.pollIndexingStatus();
 			}
 		});
@@ -265,6 +269,8 @@ export default class LumenPlugin extends Plugin {
 		this.syncClient.getSyncStatus().then(status => {
 			if (status.indexing_status.active) this.pollIndexingStatus();
 		}).catch(() => {});
+
+		this.startBackgroundPoll();
 	}
 
 	private isSyncConfigured(): boolean {
@@ -301,6 +307,7 @@ export default class LumenPlugin extends Plugin {
 	/** Poll the server for indexing status after a sync uploads files. */
 	private pollIndexingStatus(): void {
 		if (this.indexingPollTimer || !this.syncClient) return;
+		const serverTriggered = !this.pluginTriggeredIndexing;
 		this.indexingPollTimer = setInterval(async () => {
 			try {
 				const status = await this.syncClient!.getSyncStatus();
@@ -309,9 +316,11 @@ export default class LumenPlugin extends Plugin {
 						status.indexing_status.indexed_files,
 						status.indexing_status.total_files,
 						status.indexing_status.progress,
+						serverTriggered,
 					);
 				} else {
 					this.stopIndexingPoll();
+					this.pluginTriggeredIndexing = false;
 					this.syncStatusBar?.update('idle');
 					if (this.settings.lastSyncAt) {
 						this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
@@ -328,6 +337,31 @@ export default class LumenPlugin extends Plugin {
 		if (this.indexingPollTimer) {
 			clearInterval(this.indexingPollTimer);
 			this.indexingPollTimer = null;
+		}
+	}
+
+	/** Low-frequency background poll to detect server-initiated reindexing. */
+	private startBackgroundPoll(): void {
+		if (this.backgroundPollTimer) return;
+		this.backgroundPollTimer = setInterval(async () => {
+			// Skip if rapid poll is already running or sync client unavailable
+			if (this.indexingPollTimer || !this.syncClient) return;
+			try {
+				const status = await this.syncClient.getSyncStatus();
+				if (status.indexing_status.active) {
+					this.pollIndexingStatus();
+				}
+			} catch {
+				// Server unreachable — silently ignore
+			}
+		}, 30_000);
+	}
+
+	/** Stop the background indexing detection poll. */
+	private stopBackgroundPoll(): void {
+		if (this.backgroundPollTimer) {
+			clearInterval(this.backgroundPollTimer);
+			this.backgroundPollTimer = null;
 		}
 	}
 

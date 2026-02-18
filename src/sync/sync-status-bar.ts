@@ -97,18 +97,14 @@ export class SyncStatusBar {
 	}
 
 	/** Show indexing progress after a sync triggers reindexing. */
-	showIndexingProgress(indexed: number, total: number, percent: number): void {
+	showIndexingProgress(indexed: number, total: number, percent: number, serverTriggered?: boolean): void {
+		const label = serverTriggered ? 'Server reindexing' : 'Indexing';
 		this.containerEl.className = 'lumen-sync-status-bar lumen-sync-active';
 		this.iconEl.empty();
 		setIcon(this.iconEl, 'database');
-		this.textEl.textContent = `Indexing: ${indexed}/${total} (${Math.round(percent)}%)`;
+		this.textEl.textContent = `${label}: ${indexed}/${total} (${Math.round(percent)}%)`;
 		this.containerEl.setAttribute('aria-busy', 'true');
 		this.containerEl.setAttribute('aria-label', `Lumen: ${this.textEl.textContent}`);
-	}
-
-	/** Stop indexing display and return to idle state. */
-	stopIndexingDisplay(): void {
-		this.update('idle');
 	}
 
 	/** Clean up DOM and event listeners. */
