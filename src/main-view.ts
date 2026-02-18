@@ -849,7 +849,9 @@ export class LumenMainView extends ItemView {
 
 		try {
 			this.tagCache = await this.plugin.apiClient.listTags();
-		} catch {
+			logger.debug(`Fetched ${this.tagCache.length} tags`);
+		} catch (err) {
+			logger.debug(`Failed to fetch tags: ${err instanceof Error ? err.message : String(err)}`);
 			this.tagCache = [];
 		}
 	}
