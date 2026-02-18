@@ -8,6 +8,7 @@
 import { requestUrl } from 'obsidian';
 import type { ChatResponse, SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
 import { parseSSEBuffer } from './utils/sse-parser';
+import { logger } from './utils/logger';
 
 /**
  * REST API client bound to specific credentials.
@@ -126,36 +127,63 @@ export class ApiClient {
 		history: Array<{ role: string; content: string }>,
 		onToken: (token: string) => void,
 	): Promise<ChatResponse> {
-		const response = await fetch(`${this.baseUrl}/api/chat`, {
-			method: 'POST',
-			headers: this.headers,
-			body: JSON.stringify({ message, history }),
-		});
+		const url = `${this.baseUrl}/api/chat`;
+		logger.info(`Chat request → POST ${url} (history: ${history.length} messages)`);
+
+		let response: Response;
+		try {
+			response = await fetch(url, {
+				method: 'POST',
+				headers: this.headers,
+				body: JSON.stringify({ message, history }),
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			logger.error(`Chat fetch failed (network): ${msg}`);
+			throw err;
+		}
+
+		logger.info(`Chat response: ${response.status} ${response.statusText}, content-type: ${response.headers.get('content-type')}`);
 
 		if (response.status === 403) {
 			const body = await response.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>;
 			const plan = (body['required_plan'] as string) ?? 'Plus';
-			throw new Error(`AI Chat requires a ${plan} subscription. Upgrade in your Lumen dashboard.`);
+			const err = new Error(`AI Chat requires a ${plan} subscription. Upgrade in your Lumen dashboard.`);
+			logger.warn(`Chat 403: ${err.message}`);
+			throw err;
 		}
 
 		if (!response.ok) {
+			// Try to read the error body for diagnostics
+			const errorBody = await response.text().catch(() => '(unreadable)');
+			logger.error(`Chat HTTP error: ${response.status} ${response.statusText} — body: ${errorBody.slice(0, 500)}`);
 			throw new Error(`Chat request failed: ${response.status} ${response.statusText}`);
 		}
 
 		const reader = response.body?.getReader();
-		if (!reader) throw new Error('No response stream available');
+		if (!reader) {
+			logger.error('Chat response has no readable body (response.body is null)');
+			throw new Error('No response stream available');
+		}
 
 		const decoder = new TextDecoder();
 		let buffer = '';
 		let fullContent = '';
 		let finalSources: string[] = [];
+		let chunkCount = 0;
 
 		try {
 			while (true) {
 				const { done: streamDone, value } = await reader.read();
-				if (streamDone) break;
+				if (streamDone) {
+					logger.debug(`Chat SSE stream ended (EOF) after ${chunkCount} chunks, ${fullContent.length} chars`);
+					break;
+				}
 
-				buffer += decoder.decode(value, { stream: true });
+				chunkCount++;
+				const chunk = decoder.decode(value, { stream: true });
+				logger.debug(`Chat SSE chunk #${chunkCount}: ${chunk.length} bytes`);
+				buffer += chunk;
 				const result = parseSSEBuffer(buffer);
 				buffer = result.remaining;
 
@@ -166,6 +194,7 @@ export class ApiClient {
 
 				if (result.done) {
 					finalSources = result.sources;
+					logger.info(`Chat stream complete: ${fullContent.length} chars, ${finalSources.length} sources`);
 					break;
 				}
 			}

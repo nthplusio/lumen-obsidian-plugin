@@ -9,6 +9,7 @@
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, setIcon } from 'obsidian';
 import type LumenPlugin from './main';
 import type { ChatMessage, SearchResult } from './types';
+import { logger } from './utils/logger';
 
 export const VIEW_TYPE_LUMEN_MAIN = 'lumen-main-view';
 
@@ -358,6 +359,8 @@ export class LumenMainView extends ItemView {
 		let firstToken = true;
 		let streamedContent = '';
 
+		logger.info(`Chat: sending message (${message.length} chars, ${history.length} history)`);
+
 		try {
 			const response = await this.plugin.apiClient.chatStream(
 				message,
@@ -366,6 +369,7 @@ export class LumenMainView extends ItemView {
 					if (firstToken) {
 						loadingEl.remove();
 						firstToken = false;
+						logger.debug('Chat: first token received');
 					}
 					streamedContent += token;
 					contentEl.textContent = streamedContent;
@@ -377,6 +381,8 @@ export class LumenMainView extends ItemView {
 
 			// Remove loading dots if no tokens arrived (e.g. empty response)
 			if (firstToken) loadingEl.remove();
+
+			logger.info(`Chat: stream complete (${response.content.length} chars, ${response.sources.length} sources)`);
 
 			// Re-render with proper markdown formatting
 			contentEl.empty();
@@ -402,6 +408,8 @@ export class LumenMainView extends ItemView {
 			bubble.remove();
 
 			const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
+			logger.error(`Chat failed: ${errMsg}`);
+
 			if (errMsg.includes('subscription') || errMsg.includes('Upgrade')) {
 				this.showChatUpgradePrompt(errMsg);
 			} else {
