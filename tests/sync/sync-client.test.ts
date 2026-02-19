@@ -15,7 +15,9 @@ import { SyncClient } from '../../src/sync/sync-client';
 import type {
 	PluginRegistrationResponse,
 	SyncManifestResponse,
+	SyncManifestResponseV2,
 	SyncUploadResponse,
+	SyncDownloadResponse,
 	SyncStatusResponse,
 } from '../../src/types';
 
@@ -118,6 +120,34 @@ const statusResponse: SyncStatusResponse = {
 		indexed_files: 42,
 		total_files: 42,
 	},
+};
+
+const manifestResponseV2: SyncManifestResponseV2 = {
+	sync_session_id: '00000000-0000-4000-8000-000000000200',
+	needed_files: ['notes/local-new.md'],
+	deleted_files: [],
+	new_cursor: 'cursor_v2_001',
+	upload_endpoint: `/api/workspaces/${WORKSPACE_ID}/sync/upload`,
+	current_seq: 42,
+	server_changes: [
+		{ path: 'notes/server-edit.md', content_hash: 'b'.repeat(64), size_bytes: 512, seq: 41 },
+	],
+	server_deletions: ['notes/removed-on-server.md'],
+	conflicts: [
+		{ path: 'notes/conflict.md', server_hash: 'c'.repeat(64), client_hash: 'd'.repeat(64), server_seq: 40 },
+	],
+	download_endpoint: `/api/workspaces/${WORKSPACE_ID}/sync/download`,
+};
+
+const downloadResponse: SyncDownloadResponse = {
+	files: [
+		{
+			path: 'notes/server-edit.md',
+			content_base64: btoa('# Server Edited Content'),
+			content_hash: 'b'.repeat(64),
+			size_bytes: 512,
+		},
+	],
 };
 
 // ---------------------------------------------------------------------------
@@ -460,6 +490,218 @@ describe('SyncClient', () => {
 			const call = mockRequestUrl.mock.calls[0]![0] as any;
 			expect(call.url).toMatch(/^https:\/\/example\.com\/api\//);
 			expect(call.url).not.toContain('///');
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// sendManifestV2 (V2 two-way sync)
+	// -----------------------------------------------------------------------
+
+	describe('sendManifestV2', () => {
+		it('sends V2 fields: protocol_version, device_id, last_sync_seq', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, manifestResponseV2);
+
+			const files = [
+				{
+					path: 'notes/local-new.md',
+					content_hash: 'a'.repeat(64),
+					modified_at: '2026-02-13T10:00:00.000Z',
+					size_bytes: 256,
+					action: 'add' as const,
+				},
+			];
+
+			await client.sendManifestV2(files, 'device-001', 35, 'prev_cursor');
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
+			expect(body.protocol_version).toBe(2);
+			expect(body.device_id).toBe('device-001');
+			expect(body.last_sync_seq).toBe(35);
+			expect(body.cursor).toBe('prev_cursor');
+			expect(body.files).toHaveLength(1);
+		});
+
+		it('omits cursor when not provided', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, manifestResponseV2);
+
+			await client.sendManifestV2([], 'device-001', 0);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
+			expect(body.cursor).toBeUndefined();
+		});
+
+		it('sends to /sync/manifest endpoint (same as V1)', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, manifestResponseV2);
+
+			await client.sendManifestV2([], 'device-001', 0);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
+			expect(call.method).toBe('POST');
+		});
+
+		it('includes X-API-Key and Content-Type headers', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, manifestResponseV2);
+
+			await client.sendManifestV2([], 'device-001', 0);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.headers['X-API-Key']).toBe(API_KEY);
+			expect(call.headers['Content-Type']).toBe('application/json');
+		});
+
+		it('returns V2 response with server_changes, conflicts, download_endpoint', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, manifestResponseV2);
+
+			const result = await client.sendManifestV2([], 'device-001', 35);
+
+			expect(result.current_seq).toBe(42);
+			expect(result.server_changes).toHaveLength(1);
+			expect(result.server_changes[0]!.path).toBe('notes/server-edit.md');
+			expect(result.server_deletions).toEqual(['notes/removed-on-server.md']);
+			expect(result.conflicts).toHaveLength(1);
+			expect(result.conflicts[0]!.path).toBe('notes/conflict.md');
+			expect(result.download_endpoint).toContain('/sync/download');
+			// V1 fields still present
+			expect(result.needed_files).toEqual(['notes/local-new.md']);
+			expect(result.sync_session_id).toBeDefined();
+		});
+
+		it('throws on non-200 status', async () => {
+			const client = createClient();
+			mockRequestUrlFailure(500, 'Internal server error');
+
+			await expect(
+				client.sendManifestV2([], 'device-001', 0),
+			).rejects.toThrow(/V2 manifest exchange failed.*500/);
+		});
+
+		it('throws on 401 (expired API key)', async () => {
+			const client = createClient();
+			mockRequestUrlFailure(401, 'Unauthorized');
+
+			await expect(
+				client.sendManifestV2([], 'device-001', 0),
+			).rejects.toThrow(/V2 manifest exchange failed.*401/);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// downloadFiles (V2 pull path, BUG-3 fix)
+	// -----------------------------------------------------------------------
+
+	describe('downloadFiles', () => {
+		it('sends session ID and paths to download endpoint', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, downloadResponse);
+
+			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.method).toBe('POST');
+
+			const body = JSON.parse(call.body);
+			expect(body.sync_session_id).toBe('session-v2');
+			expect(body.paths).toEqual(['notes/server-edit.md']);
+		});
+
+		it('uses server-provided endpoint when given (BUG-3 fix)', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, downloadResponse);
+
+			const serverEndpoint = `/api/workspaces/${WORKSPACE_ID}/sync/download`;
+			await client.downloadFiles('session-v2', ['notes/server-edit.md'], serverEndpoint);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}${serverEndpoint}`);
+		});
+
+		it('falls back to default /sync/download when endpoint not provided', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, downloadResponse);
+
+			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/download`);
+		});
+
+		it('includes X-API-Key and Content-Type headers', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, downloadResponse);
+
+			await client.downloadFiles('session-v2', ['notes/file.md']);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.headers['X-API-Key']).toBe(API_KEY);
+			expect(call.headers['Content-Type']).toBe('application/json');
+		});
+
+		it('returns files with base64 content', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, downloadResponse);
+
+			const result = await client.downloadFiles('session-v2', ['notes/server-edit.md']);
+
+			expect(result.files).toHaveLength(1);
+			expect(result.files[0]!.path).toBe('notes/server-edit.md');
+			expect(result.files[0]!.content_base64).toBe(btoa('# Server Edited Content'));
+			expect(result.files[0]!.content_hash).toBe('b'.repeat(64));
+			expect(result.files[0]!.size_bytes).toBe(512);
+		});
+
+		it('handles multiple files in download response', async () => {
+			const client = createClient();
+			const multiFileResponse: SyncDownloadResponse = {
+				files: [
+					{ path: 'a.md', content_base64: btoa('AAA'), content_hash: 'a'.repeat(64), size_bytes: 3 },
+					{ path: 'b.md', content_base64: btoa('BBB'), content_hash: 'b'.repeat(64), size_bytes: 3 },
+					{ path: 'c.md', content_base64: btoa('CCC'), content_hash: 'c'.repeat(64), size_bytes: 3 },
+				],
+			};
+			mockRequestUrlSuccess(200, multiFileResponse);
+
+			const result = await client.downloadFiles('session-v2', ['a.md', 'b.md', 'c.md']);
+
+			expect(result.files).toHaveLength(3);
+			expect(result.files.map(f => f.path)).toEqual(['a.md', 'b.md', 'c.md']);
+		});
+
+		it('sends multiple paths in request body', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, { files: [] });
+
+			const paths = ['notes/a.md', 'notes/b.md', 'folder/c.md'];
+			await client.downloadFiles('session-v2', paths);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
+			expect(body.paths).toEqual(paths);
+		});
+
+		it('throws on non-200 status', async () => {
+			const client = createClient();
+			mockRequestUrlFailure(404, 'Session not found');
+
+			await expect(
+				client.downloadFiles('bad-session', ['notes/file.md']),
+			).rejects.toThrow(/Download failed.*404/);
+		});
+
+		it('throws on server error', async () => {
+			const client = createClient();
+			mockRequestUrlFailure(500, 'Internal error');
+
+			await expect(
+				client.downloadFiles('session-v2', ['notes/file.md']),
+			).rejects.toThrow(/Download failed.*500/);
 		});
 	});
 

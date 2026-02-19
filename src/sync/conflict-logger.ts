@@ -11,6 +11,7 @@
 import type { Vault } from 'obsidian';
 import type { ConflictEntry } from '../types';
 import { logger } from '../utils/logger';
+import { escapeMd, sanitizeConflictType, sanitizeResolution } from '../utils/path-safety';
 
 const CONFLICT_LOG_PATH = '.lumen-conflicts.md';
 
@@ -34,12 +35,17 @@ export class ConflictLogger {
 	 * Append conflict entries to the log file.
 	 *
 	 * Creates the file with a header if it doesn't exist yet.
+	 * Optional localContents map preserves overwritten local content for V2 conflicts.
 	 */
-	async logConflicts(sessionId: string, conflicts: ConflictEntry[]): Promise<void> {
+	async logConflicts(
+		sessionId: string,
+		conflicts: ConflictEntry[],
+		localContents?: Map<string, string>,
+	): Promise<void> {
 		if (conflicts.length === 0) return;
 
 		const timestamp = new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
-		const entry = this.formatEntry(timestamp, sessionId, conflicts);
+		const entry = this.formatEntry(timestamp, sessionId, conflicts, localContents);
 
 		try {
 			const exists = this.vault.getAbstractFileByPath(CONFLICT_LOG_PATH);
@@ -73,12 +79,20 @@ export class ConflictLogger {
 	/**
 	 * Format a set of conflicts into a markdown section.
 	 *
+	 * SEC-3 fix: all server-controlled strings are escaped or validated
+	 * before interpolation into Markdown to prevent injection.
+	 *
 	 * Output follows the spec format:
 	 * ## <timestamp> (Sync Session: <id>)
 	 * **N conflicts detected:**
 	 * 1. `<path>` ...
 	 */
-	private formatEntry(timestamp: string, sessionId: string, conflicts: ConflictEntry[]): string {
+	private formatEntry(
+		timestamp: string,
+		sessionId: string,
+		conflicts: ConflictEntry[],
+		localContents?: Map<string, string>,
+	): string {
 		const lines: string[] = [];
 
 		lines.push(`## ${timestamp} (Sync Session: ${sessionId})`);
@@ -88,11 +102,27 @@ export class ConflictLogger {
 
 		for (let i = 0; i < conflicts.length; i++) {
 			const c = conflicts[i]!;
-			lines.push(`${i + 1}. \`${c.path}\``);
-			lines.push(`   - Type: ${c.type}`);
-			lines.push(`   - Local hash: \`${c.localHash}\``);
-			lines.push(`   - Server hash: \`${c.serverHash}\``);
-			lines.push(`   - Resolution: ${c.resolution === 'server-kept' ? 'Server version kept' : 'Local version kept'}`);
+			lines.push(`${i + 1}. \`${escapeMd(c.path)}\``);
+			lines.push(`   - Type: ${sanitizeConflictType(c.type)}`);
+			lines.push(`   - Local hash: \`${escapeMd(c.localHash)}\``);
+			lines.push(`   - Server hash: \`${escapeMd(c.serverHash)}\``);
+			lines.push(`   - Resolution: ${sanitizeResolution(c.resolution) === 'server-kept' ? 'Server version kept' : 'Local version kept'}`);
+
+			const localContent = localContents?.get(c.path);
+			if (localContent) {
+				const snippet = localContent.length > 2000
+					? localContent.slice(0, 2000) + '\n... (truncated)'
+					: localContent;
+				lines.push('');
+				lines.push('   <details>');
+				lines.push('   <summary>Overwritten local content</summary>');
+				lines.push('');
+				lines.push('   ```markdown');
+				lines.push(`   ${snippet.split('\n').join('\n   ')}`);
+				lines.push('   ```');
+				lines.push('   </details>');
+			}
+
 			lines.push('');
 		}
 

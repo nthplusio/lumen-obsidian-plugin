@@ -21,6 +21,7 @@ import type {
 	SyncProgressCallback,
 	FileManifestEntry,
 	ConflictEntry,
+	SyncManifestResponseV2,
 	LumenSettings,
 } from '../types';
 import { FileHasher } from './file-hasher';
@@ -29,6 +30,7 @@ import { ConflictLogger } from './conflict-logger';
 import { classifyError } from '../utils/error-classifier';
 import { logger } from '../utils/logger';
 import { isExcludedByPatterns } from '../utils/exclude-pattern';
+import { isSafePath } from '../utils/path-safety';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -194,6 +196,7 @@ export class SyncManager {
 			return {
 				success: false,
 				filesUploaded: 0,
+				filesDownloaded: 0,
 				filesDeleted: 0,
 				errors: ['Sync already in progress'],
 				duration: 0,
@@ -231,29 +234,41 @@ export class SyncManager {
 				},
 			);
 
-			// ---- Phase 2: Build and send manifest ----
+			// ---- Phase 2: Build and send manifest (V2) ----
 			this.setState('manifest');
 			logger.info(`Hashed ${manifest.size} files`);
 			const entries = this.buildManifestEntries(manifest);
 
-			if (entries.length === 0) {
+			if (entries.length === 0 && this.settings.lastSyncSeq > 0) {
+				// Even with no local changes, we still need to check for server changes
+				// if we've synced before. Send an empty manifest to get server_changes.
+			} else if (entries.length === 0) {
 				logger.info('No files to sync');
-				this.finishSuccess(0, 0, Date.now() - startTime);
+				this.finishSuccess(0, 0, 0, Date.now() - startTime);
 				return {
 					success: true,
 					filesUploaded: 0,
+					filesDownloaded: 0,
 					filesDeleted: 0,
 					errors: [],
 					duration: Date.now() - startTime,
 				};
 			}
 
-			const manifestResponse = await this.syncClient.sendManifest(
+			const manifestResponse = await this.syncClient.sendManifestV2(
 				entries,
+				this.settings.deviceId,
+				this.settings.lastSyncSeq,
 				this.settings.lastSyncCursor || undefined,
 			);
 
-			logger.info(`Server requests ${manifestResponse.needed_files.length} file(s)`);
+			// Detect if server returned V2 response
+			const isV2 = 'server_changes' in manifestResponse;
+
+			logger.info(
+				`Server requests ${manifestResponse.needed_files.length} upload(s)` +
+				(isV2 ? `, ${(manifestResponse as SyncManifestResponseV2).server_changes.length} download(s)` : ''),
+			);
 
 			// ---- Phase 3: Upload requested files ----
 			let filesUploaded = 0;
@@ -269,7 +284,7 @@ export class SyncManager {
 				logger.info(`Uploading ${fileContents.size} file(s)...`);
 				this.reportProgress(
 					'uploading',
-					fileContents.size,
+					0,
 					fileContents.size,
 					'Uploading files...',
 				);
@@ -290,39 +305,99 @@ export class SyncManager {
 				}
 			}
 
-			// ---- Phase 4: Handle conflicts ----
-			const conflicts = this.detectConflicts(manifestResponse.deleted_files);
-			if (conflicts.length > 0) {
+			// ---- Phase 3.5: Pre-read conflict files BEFORE downloading (BUG-1 fix) ----
+			const conflictLocalContents = new Map<string, string>();
+			if (isV2 && (manifestResponse as SyncManifestResponseV2).conflicts.length > 0) {
+				const v2Conflicts = (manifestResponse as SyncManifestResponseV2).conflicts;
+				await Promise.all(v2Conflicts.map(async (c) => {
+					const content = await this.readSingleFile(c.path);
+					if (content !== null) {
+						conflictLocalContents.set(c.path, content);
+					}
+				}));
+			}
+
+			// ---- Phase 4: Download server changes (V2 only) ----
+			let filesDownloaded = 0;
+			let filesDeletedLocally = 0;
+
+			if (isV2) {
+				const v2 = manifestResponse as SyncManifestResponseV2;
+				const downloadResult = await this.handleServerChanges(v2, manifest);
+				filesDownloaded = downloadResult.downloaded;
+				filesDeletedLocally = downloadResult.deleted;
+				errors.push(...downloadResult.errors);
+			}
+
+			// ---- Phase 5: Handle conflicts ----
+			const conflicts: ConflictEntry[] = [];
+
+			if (isV2 && (manifestResponse as SyncManifestResponseV2).conflicts.length > 0) {
+				// V2 conflicts: server wins, log overwritten local content
+				const v2Conflicts = (manifestResponse as SyncManifestResponseV2).conflicts;
+
+				for (const c of v2Conflicts) {
+					conflicts.push({
+						path: c.path,
+						type: 'both-modified',
+						localHash: c.client_hash,
+						serverHash: c.server_hash,
+						resolution: 'server-kept',
+					});
+				}
+
 				await this.conflictLogger.logConflicts(
 					manifestResponse.sync_session_id,
 					conflicts,
+					conflictLocalContents,
 				);
-				new Notice(
-					`Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
-				);
+
+				if (conflicts.length > 0) {
+					new Notice(
+						`Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
+					);
+				}
+			} else {
+				// V1 fallback: detect conflicts from deleted_files
+				const v1Conflicts = this.detectConflicts(manifestResponse.deleted_files);
+				if (v1Conflicts.length > 0) {
+					conflicts.push(...v1Conflicts);
+					await this.conflictLogger.logConflicts(
+						manifestResponse.sync_session_id,
+						v1Conflicts,
+					);
+					new Notice(
+						`Sync complete. ${v1Conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
+					);
+				}
 			}
 
-			// ---- Phase 5: Update cursor and finalize ----
+			// ---- Phase 6: Update cursor/seq and finalize ----
 			this.settings.lastSyncCursor = manifestResponse.new_cursor;
+			if (isV2) {
+				this.settings.lastSyncSeq = (manifestResponse as SyncManifestResponseV2).current_seq;
+			}
 			this.settings.lastSyncAt = new Date().toISOString();
-			// Note: The caller (main.ts) is responsible for calling plugin.saveSettings()
-			// after a sync. We update settings in-memory only.
+
+			// BUG-2 fix: persist settings after every successful sync (not just manual)
+			await this.plugin.saveData(this.settings);
 
 			this.pendingChanges.clear();
 			this.deletedPaths.clear();
 
 			const duration = Date.now() - startTime;
-			const deletedCount = manifestResponse.deleted_files.length;
+			const totalDeleted = manifestResponse.deleted_files.length + filesDeletedLocally;
 
-			this.finishSuccess(filesUploaded, deletedCount, duration);
+			this.finishSuccess(filesUploaded, filesDownloaded, totalDeleted, duration);
 			logger.info(
-				`Sync complete: ${filesUploaded} uploaded, ${deletedCount} deleted (${duration}ms)`,
+				`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted (${duration}ms)`,
 			);
 
 			return {
 				success: true,
 				filesUploaded,
-				filesDeleted: deletedCount,
+				filesDownloaded,
+				filesDeleted: totalDeleted,
 				errors,
 				duration,
 				conflicts: conflicts.length > 0 ? conflicts : undefined,
@@ -354,6 +429,7 @@ export class SyncManager {
 			return {
 				success: false,
 				filesUploaded: 0,
+				filesDownloaded: 0,
 				filesDeleted: 0,
 				errors: [classified.message],
 				duration,
@@ -361,6 +437,165 @@ export class SyncManager {
 		} finally {
 			this.syncInProgress = false;
 		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Server → Plugin download (V2 pull path)
+	// -----------------------------------------------------------------------
+
+	/** Download batch size for server changes. */
+	private static readonly DOWNLOAD_BATCH_SIZE = 50;
+
+	/**
+	 * Handle server changes from a V2 manifest response.
+	 *
+	 * Downloads new/modified files and deletes locally-removed files.
+	 * SEC-1/SEC-2 fix: all server-controlled paths are validated before use.
+	 * BUG-3 fix: uses server-provided download_endpoint.
+	 */
+	private async handleServerChanges(
+		v2Response: SyncManifestResponseV2,
+		localManifest: Map<string, FileManifestEntry>,
+	): Promise<{ downloaded: number; deleted: number; errors: string[] }> {
+		const errors: string[] = [];
+		let downloaded = 0;
+		let deleted = 0;
+
+		// ---- Download new/modified files ----
+		if (v2Response.server_changes.length > 0) {
+			this.setState('downloading');
+			const paths = v2Response.server_changes.map(c => c.path);
+			logger.info(`Downloading ${paths.length} file(s) from server...`);
+
+			// Process in batches
+			for (let i = 0; i < paths.length; i += SyncManager.DOWNLOAD_BATCH_SIZE) {
+				const batch = paths.slice(i, i + SyncManager.DOWNLOAD_BATCH_SIZE);
+				this.reportProgress(
+					'downloading',
+					i,
+					paths.length,
+					'Downloading files...',
+				);
+
+				try {
+					const response = await this.syncClient.downloadFiles(
+						v2Response.sync_session_id,
+						batch,
+						v2Response.download_endpoint,
+					);
+
+					for (const file of response.files) {
+						// SEC-1: validate path before writing
+						if (!isSafePath(file.path)) {
+							const msg = `Unsafe path rejected (write): ${file.path}`;
+							errors.push(msg);
+							logger.warn(msg);
+							continue;
+						}
+
+						try {
+							const content = atob(file.content_base64);
+							await this.writeToVault(file.path, content);
+							this.fileHasher.invalidateCache(file.path);
+							downloaded++;
+						} catch (writeErr) {
+							const msg = `Failed to write ${file.path}: ${writeErr instanceof Error ? writeErr.message : 'unknown'}`;
+							errors.push(msg);
+							logger.error(msg);
+						}
+					}
+				} catch (batchErr) {
+					const msg = `Download batch failed: ${batchErr instanceof Error ? batchErr.message : 'unknown'}`;
+					errors.push(msg);
+					logger.error(msg);
+				}
+			}
+
+			logger.info(`Downloaded ${downloaded}/${paths.length} file(s)`);
+		}
+
+		// ---- Delete locally-removed files ----
+		if (v2Response.server_deletions.length > 0) {
+			logger.info(`Deleting ${v2Response.server_deletions.length} file(s) removed from server...`);
+
+			for (const path of v2Response.server_deletions) {
+				// SEC-2: validate path before deleting
+				if (!isSafePath(path)) {
+					const msg = `Unsafe path rejected (delete): ${path}`;
+					errors.push(msg);
+					logger.warn(msg);
+					continue;
+				}
+
+				try {
+					const file = this.plugin.app.vault.getAbstractFileByPath(path);
+					if (file instanceof TFile) {
+						await this.plugin.app.vault.delete(file);
+						this.fileHasher.invalidateCache(path);
+						deleted++;
+						logger.debug(`Deleted local file: ${path}`);
+					} else {
+						logger.debug(`File not found for deletion (already removed?): ${path}`);
+					}
+				} catch (delErr) {
+					const msg = `Failed to delete ${path}: ${delErr instanceof Error ? delErr.message : 'unknown'}`;
+					errors.push(msg);
+					logger.error(msg);
+				}
+			}
+
+			logger.info(`Deleted ${deleted}/${v2Response.server_deletions.length} file(s)`);
+		}
+
+		return { downloaded, deleted, errors };
+	}
+
+	/**
+	 * Write content to a vault file, creating parent folders and the
+	 * file itself if they don't exist.
+	 */
+	private async writeToVault(path: string, content: string): Promise<void> {
+		const existing = this.plugin.app.vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) {
+			await this.plugin.app.vault.modify(existing, content);
+		} else {
+			// Ensure parent directories exist
+			const dir = path.substring(0, path.lastIndexOf('/'));
+			if (dir) {
+				await this.ensureDirectory(dir);
+			}
+			await this.plugin.app.vault.create(path, content);
+		}
+	}
+
+	/** Recursively create directories if they don't exist. */
+	private async ensureDirectory(dirPath: string): Promise<void> {
+		const existing = this.plugin.app.vault.getAbstractFileByPath(dirPath);
+		if (existing) return;
+
+		const parent = dirPath.substring(0, dirPath.lastIndexOf('/'));
+		if (parent) {
+			await this.ensureDirectory(parent);
+		}
+
+		try {
+			await this.plugin.app.vault.createFolder(dirPath);
+		} catch {
+			// Folder may have been created concurrently — ignore
+		}
+	}
+
+	/** Read a single file's content, returning null if not found. */
+	private async readSingleFile(path: string): Promise<string | null> {
+		try {
+			const file = this.plugin.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				return await this.plugin.app.vault.read(file);
+			}
+		} catch {
+			// File may not exist
+		}
+		return null;
 	}
 
 	// -----------------------------------------------------------------------
@@ -567,7 +802,7 @@ export class SyncManager {
 		}
 	}
 
-	private finishSuccess(filesUploaded: number, filesDeleted: number, duration: number): void {
+	private finishSuccess(filesUploaded: number, filesDownloaded: number, filesDeleted: number, duration: number): void {
 		this.setState('success');
 
 		// Revert to idle after a delay

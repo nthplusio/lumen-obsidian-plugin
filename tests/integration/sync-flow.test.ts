@@ -23,6 +23,7 @@ import { DEFAULT_SETTINGS } from '../../src/types';
 import type {
 	LumenSettings,
 	SyncManifestResponse,
+	SyncManifestResponseV2,
 	SyncUploadResponse,
 	SyncState,
 } from '../../src/types';
@@ -107,6 +108,10 @@ function createMockVault(files: ReturnType<typeof createMockTFile>[] = []) {
 		on: vi.fn().mockReturnValue({}),
 		off: vi.fn(),
 		create: vi.fn().mockResolvedValue(undefined),
+		modify: vi.fn().mockResolvedValue(undefined),
+		delete: vi.fn().mockResolvedValue(undefined),
+		createFolder: vi.fn().mockResolvedValue(undefined),
+		getName: vi.fn().mockReturnValue('test-vault'),
 		adapter: {
 			read: vi.fn().mockResolvedValue(''),
 			write: vi.fn().mockResolvedValue(undefined),
@@ -119,11 +124,28 @@ function createMockVault(files: ReturnType<typeof createMockTFile>[] = []) {
 function createMockPlugin(vault: ReturnType<typeof createMockVault>) {
 	return {
 		registerEvent: vi.fn(),
+		saveData: vi.fn().mockResolvedValue(undefined),
 		app: {
 			vault,
 			workspace: {},
 		},
 		manifest: { version: '0.1.0' },
+	};
+}
+
+function createDefaultV2Response(overrides: Partial<SyncManifestResponseV2> = {}): SyncManifestResponseV2 {
+	return {
+		sync_session_id: 'session-001',
+		needed_files: [],
+		deleted_files: [],
+		new_cursor: 'cursor-new',
+		upload_endpoint: '/api/workspaces/ws-001/sync/upload',
+		current_seq: 1,
+		server_changes: [],
+		server_deletions: [],
+		conflicts: [],
+		download_endpoint: '/api/workspaces/ws-001/sync/download',
+		...overrides,
 	};
 }
 
@@ -137,6 +159,7 @@ function createMockSyncClient() {
 			new_cursor: 'cursor-new',
 			upload_endpoint: '/api/workspaces/ws-001/sync/upload',
 		} satisfies SyncManifestResponse),
+		sendManifestV2: vi.fn().mockResolvedValue(createDefaultV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
 			accepted: 0,
@@ -145,6 +168,7 @@ function createMockSyncClient() {
 			indexing_triggered: false,
 			rejected_files: [],
 		} satisfies SyncUploadResponse),
+		downloadFiles: vi.fn().mockResolvedValue({ files: [] }),
 		getSyncStatus: vi.fn(),
 		updateSettings: vi.fn(),
 	};
@@ -251,13 +275,11 @@ describe('Sync Flow Integration', () => {
 			manager.onStateChange((state) => stateTransitions.push(state));
 
 			// Server needs both files
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-happy',
 				needed_files: ['notes/daily.md', 'notes/project.md'],
-				deleted_files: [],
 				new_cursor: 'cursor-happy',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			syncClient.uploadFiles.mockResolvedValue({
 				sync_session_id: 'session-happy',
@@ -298,19 +320,16 @@ describe('Sync Flow Integration', () => {
 			const files = [createMockTFile('notes/test.md', 1000, 50)];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-hash',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-hash',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			await manager.syncNow();
 
 			// Verify manifest was sent with hashed entries
-			expect(syncClient.sendManifest).toHaveBeenCalledOnce();
-			const [entries] = syncClient.sendManifest.mock.calls[0]!;
+			expect(syncClient.sendManifestV2).toHaveBeenCalledOnce();
+			const [entries] = syncClient.sendManifestV2.mock.calls[0]!;
 			expect(entries).toHaveLength(1);
 			expect(entries[0].path).toBe('notes/test.md');
 			expect(entries[0].content_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -326,13 +345,11 @@ describe('Sync Flow Integration', () => {
 			await buildStack(files);
 
 			// Server only needs one file
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-partial',
 				needed_files: ['notes/a.md'],
-				deleted_files: [],
 				new_cursor: 'cursor-partial',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			syncClient.uploadFiles.mockResolvedValue({
 				sync_session_id: 'session-partial',
@@ -361,13 +378,10 @@ describe('Sync Flow Integration', () => {
 			const files = [createMockTFile('notes/test.md', 1000, 50)];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-cursor',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'new-cursor-abc',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			await manager.syncNow();
 
@@ -389,7 +403,7 @@ describe('Sync Flow Integration', () => {
 			expect(result.success).toBe(true);
 			expect(result.filesUploaded).toBe(0);
 			expect(result.filesDeleted).toBe(0);
-			expect(syncClient.sendManifest).not.toHaveBeenCalled();
+			expect(syncClient.sendManifestV2).not.toHaveBeenCalled();
 			expect(syncClient.uploadFiles).not.toHaveBeenCalled();
 		});
 
@@ -397,13 +411,10 @@ describe('Sync Flow Integration', () => {
 			const files = [createMockTFile('notes/existing.md', 1000, 50)];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-noop',
-				needed_files: [],      // server already has everything
-				deleted_files: [],
 				new_cursor: 'cursor-noop',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			const result = await manager.syncNow();
 
@@ -423,15 +434,12 @@ describe('Sync Flow Integration', () => {
 			await buildStack(files);
 
 			// First manifest call fails with a retryable 503
-			syncClient.sendManifest
+			syncClient.sendManifestV2
 				.mockRejectedValueOnce(new Error('503 Service Unavailable'))
-				.mockResolvedValueOnce({
+				.mockResolvedValueOnce(createDefaultV2Response({
 					sync_session_id: 'session-retry',
-					needed_files: [],
-					deleted_files: [],
 					new_cursor: 'cursor-retry',
-					upload_endpoint: '/upload',
-				});
+				}));
 
 			// Run sync and advance timers concurrently — the retry delay
 			// is a setTimeout that needs fake-timer advancement to fire.
@@ -443,7 +451,7 @@ describe('Sync Flow Integration', () => {
 			]);
 
 			expect(result.success).toBe(true);
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(2);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(2);
 		});
 
 		it('gives up after MAX_RETRIES (3) and transitions to error', async () => {
@@ -451,7 +459,7 @@ describe('Sync Flow Integration', () => {
 			await buildStack(files);
 
 			// All manifest calls fail
-			syncClient.sendManifest.mockRejectedValue(
+			syncClient.sendManifestV2.mockRejectedValue(
 				new Error('502 Bad Gateway'),
 			);
 
@@ -465,7 +473,7 @@ describe('Sync Flow Integration', () => {
 			expect(result.errors).toHaveLength(1);
 			expect(manager.getState()).toBe('error');
 			// Initial + 3 retries = 4 total calls
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(4);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(4);
 		});
 	});
 
@@ -478,7 +486,7 @@ describe('Sync Flow Integration', () => {
 			const files = [createMockTFile('notes/expired.md', 1000, 50)];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockRejectedValue(
+			syncClient.sendManifestV2.mockRejectedValue(
 				new Error('410 SYNC_SESSION_EXPIRED'),
 			);
 
@@ -488,7 +496,7 @@ describe('Sync Flow Integration', () => {
 			expect(result.errors[0]).toContain('Sync session expired');
 			expect(manager.getState()).toBe('error');
 			// Should NOT retry — 410 is not retryable
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(1);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -504,13 +512,11 @@ describe('Sync Flow Integration', () => {
 			];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-mixed',
 				needed_files: ['notes/good.md', 'notes/huge.md'],
-				deleted_files: [],
 				new_cursor: 'cursor-mixed',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			syncClient.uploadFiles.mockResolvedValue({
 				sync_session_id: 'session-mixed',
@@ -560,13 +566,11 @@ describe('Sync Flow Integration', () => {
 			modifyHandler(conflictedFile);
 
 			// Server says it deleted conflicted.md
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-conflict',
-				needed_files: [],
 				deleted_files: ['notes/conflicted.md'],
 				new_cursor: 'cursor-conflict',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			const result = await manager.syncNow();
 
@@ -608,16 +612,13 @@ describe('Sync Flow Integration', () => {
 			modifyHandler(files[2]);
 
 			// The debounce hasn't fired yet (resets on each change)
-			expect(syncClient.sendManifest).not.toHaveBeenCalled();
+			expect(syncClient.sendManifestV2).not.toHaveBeenCalled();
 
 			// Advance past the debounce window (60s from last change)
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-debounce',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-debounce',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			// Use advanceTimersInSteps so the debounce-triggered sync
 			// (fire-and-forget executeSync) has microtask ticks to
@@ -625,7 +626,7 @@ describe('Sync Flow Integration', () => {
 			await advanceTimersInSteps(65000);
 
 			// Only ONE sync should have been triggered
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(1);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -652,24 +653,21 @@ describe('Sync Flow Integration', () => {
 			modifyHandler(files[0]);
 
 			// Debounce is ticking... but user hits "Sync Now"
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-manual',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-manual',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			const result = await manager.syncNow();
 
 			expect(result.success).toBe(true);
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(1);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(1);
 
 			// Advance past the debounce window — should NOT trigger another sync
 			await vi.advanceTimersByTimeAsync(15000);
 
 			// Still only 1 manifest call (the manual one)
-			expect(syncClient.sendManifest).toHaveBeenCalledTimes(1);
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -689,18 +687,15 @@ describe('Sync Flow Integration', () => {
 				excludePatterns: ['.obsidian/', '.trash/', 'templates/'],
 			});
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-exclude',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-exclude',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			await manager.syncNow();
 
 			// Only 1 non-excluded file should be in the manifest
-			const [entries] = syncClient.sendManifest.mock.calls[0]!;
+			const [entries] = syncClient.sendManifestV2.mock.calls[0]!;
 			expect(entries).toHaveLength(1);
 			expect(entries[0].path).toBe('notes/keep.md');
 		});
@@ -716,9 +711,9 @@ describe('Sync Flow Integration', () => {
 			await buildStack(files);
 
 			// Make manifest slow
-			let resolveManifest: (value: SyncManifestResponse) => void;
-			syncClient.sendManifest.mockReturnValue(
-				new Promise<SyncManifestResponse>((resolve) => {
+			let resolveManifest: (value: SyncManifestResponseV2) => void;
+			syncClient.sendManifestV2.mockReturnValue(
+				new Promise<SyncManifestResponseV2>((resolve) => {
 					resolveManifest = resolve;
 				}),
 			);
@@ -727,13 +722,10 @@ describe('Sync Flow Integration', () => {
 			const promise2 = manager.syncNow();
 
 			// Resolve the first sync
-			resolveManifest!({
+			resolveManifest!(createDefaultV2Response({
 				sync_session_id: 'session-concurrent',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-concurrent',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			const [result1, result2] = await Promise.all([promise1, promise2]);
 
@@ -760,13 +752,11 @@ describe('Sync Flow Integration', () => {
 				if (p) progress.push({ state, current: p.current, total: p.total });
 			});
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-progress',
 				needed_files: ['notes/file-0.md'],
-				deleted_files: [],
 				new_cursor: 'cursor-progress',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			syncClient.uploadFiles.mockResolvedValue({
 				sync_session_id: 'session-progress',
@@ -807,31 +797,25 @@ describe('Sync Flow Integration', () => {
 			const files = [createMockTFile('notes/stable.md', 1000, 50)];
 			await buildStack(files);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-1',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-1',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			await manager.syncNow();
-			const hash1 = syncClient.sendManifest.mock.calls[0]![0][0].content_hash;
+			const hash1 = syncClient.sendManifestV2.mock.calls[0]![0][0].content_hash;
 
 			// Second sync (cursor changes but file doesn't)
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-2',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'cursor-2',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			// Wait for success → idle transition
 			vi.advanceTimersByTime(6000);
 
 			await manager.syncNow();
-			const hash2 = syncClient.sendManifest.mock.calls[1]![0][0].content_hash;
+			const hash2 = syncClient.sendManifestV2.mock.calls[1]![0][0].content_hash;
 
 			expect(hash1).toBe(hash2);
 			expect(hash1).toMatch(/^[0-9a-f]{64}$/);

@@ -21,6 +21,7 @@ export interface LumenSettings {
 	workspaceId: string;
 	deviceId: string;
 	lastSyncCursor: string;
+	lastSyncSeq: number;
 	lastSyncAt: string;
 	debugMode: boolean;
 }
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 	workspaceId: '',
 	deviceId: '',
 	lastSyncCursor: '',
+	lastSyncSeq: 0,
 	lastSyncAt: '',
 	debugMode: false,
 };
@@ -44,12 +46,13 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 // ============================================================================
 
 /** Sync engine states */
-export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'success' | 'error';
+export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'downloading' | 'success' | 'error';
 
 /** Result returned after a sync completes (or fails) */
 export interface SyncResult {
 	success: boolean;
 	filesUploaded: number;
+	filesDownloaded: number;
 	filesDeleted: number;
 	errors: string[];
 	duration: number;
@@ -127,6 +130,46 @@ export interface SyncStatusResponse {
 		indexed_files: number;
 		total_files: number;
 	};
+}
+
+// ============================================================================
+// Sync API v2 Types (Two-Way Sync, mirrors @lumen/shared/storage.ts)
+// ============================================================================
+
+/** A file changed on the server since the plugin's last sync sequence. */
+export interface ServerChange {
+	path: string;
+	content_hash: string;
+	size_bytes: number;
+	seq: number;
+}
+
+/** Conflict detected between client and server versions. */
+export interface ConflictInfo {
+	path: string;
+	server_hash: string;
+	client_hash: string;
+	server_seq: number;
+}
+
+/** V2 manifest response with server changes and conflict info. */
+export interface SyncManifestResponseV2 extends SyncManifestResponse {
+	current_seq: number;
+	server_changes: ServerChange[];
+	server_deletions: string[];
+	conflicts: ConflictInfo[];
+	download_endpoint: string;
+	requires_full_sync?: boolean;
+}
+
+/** Response from the download endpoint with base64-encoded file contents. */
+export interface SyncDownloadResponse {
+	files: Array<{
+		path: string;
+		content_base64: string;
+		content_hash: string;
+		size_bytes: number;
+	}>;
 }
 
 // ============================================================================

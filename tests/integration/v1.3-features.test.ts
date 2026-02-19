@@ -526,6 +526,18 @@ describe('Integration: Event-driven sync with idle detection', () => {
 				new_cursor: 'cursor-new',
 				upload_endpoint: '/upload',
 			}),
+			sendManifestV2: vi.fn().mockResolvedValue({
+				sync_session_id: 'session-001',
+				needed_files: [],
+				deleted_files: [],
+				new_cursor: 'cursor-new',
+				upload_endpoint: '/upload',
+				current_seq: 1,
+				server_changes: [],
+				server_deletions: [],
+				conflicts: [],
+				download_endpoint: '/api/workspaces/ws-001/sync/download',
+			}),
 			uploadFiles: vi.fn().mockResolvedValue({
 				sync_session_id: 'session-001',
 				accepted: 0,
@@ -534,6 +546,7 @@ describe('Integration: Event-driven sync with idle detection', () => {
 				indexing_triggered: false,
 				rejected_files: [],
 			}),
+			downloadFiles: vi.fn().mockResolvedValue({ files: [] }),
 			getSyncStatus: vi.fn(),
 			updateSettings: vi.fn(),
 		};
@@ -546,13 +559,19 @@ describe('Integration: Event-driven sync with idle detection', () => {
 		const vaultOn = vi.fn().mockReturnValue({});
 		mockPlugin = {
 			registerEvent: vi.fn(),
+			saveData: vi.fn().mockResolvedValue(undefined),
 			app: {
 				vault: {
 					on: vaultOn,
 					off: vi.fn(),
 					read: vi.fn().mockResolvedValue('content'),
+					create: vi.fn().mockResolvedValue(undefined),
+					modify: vi.fn().mockResolvedValue(undefined),
+					delete: vi.fn().mockResolvedValue(undefined),
+					createFolder: vi.fn().mockResolvedValue(undefined),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 					getMarkdownFiles: vi.fn().mockReturnValue([]),
+					getName: vi.fn().mockReturnValue('test-vault'),
 				},
 				workspace: {},
 			},
@@ -633,12 +652,17 @@ describe('Integration: Event-driven sync with idle detection', () => {
 		});
 		fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
-		syncClient.sendManifest.mockResolvedValue({
+		syncClient.sendManifestV2.mockResolvedValue({
 			sync_session_id: 'session-manual',
 			needed_files: [],
 			deleted_files: [],
 			new_cursor: 'cursor-manual',
 			upload_endpoint: '/upload',
+			current_seq: 1,
+			server_changes: [],
+			server_deletions: [],
+			conflicts: [],
+			download_endpoint: '/api/workspaces/ws-001/sync/download',
 		});
 
 		await manager.initialize();

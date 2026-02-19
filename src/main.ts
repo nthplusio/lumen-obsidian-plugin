@@ -273,9 +273,14 @@ export default class LumenPlugin extends Plugin {
 		}
 
 		if (result.success) {
+			const parts: string[] = [];
+			if (result.filesUploaded > 0) parts.push(`${result.filesUploaded} uploaded`);
+			if (result.filesDownloaded > 0) parts.push(`${result.filesDownloaded} downloaded`);
+			if (result.filesDeleted > 0) parts.push(`${result.filesDeleted} deleted`);
+
 			new Notice(
-				result.filesUploaded > 0
-					? `Synced ${result.filesUploaded} file(s) to Lumen.`
+				parts.length > 0
+					? `Synced: ${parts.join(', ')}.`
 					: 'Vault is up to date.',
 			);
 

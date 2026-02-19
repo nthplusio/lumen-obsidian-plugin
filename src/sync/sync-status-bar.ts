@@ -14,6 +14,7 @@ const STATE_ICONS: Record<SyncState, string> = {
 	hashing: 'loader-2',
 	manifest: 'loader-2',
 	uploading: 'loader-2',
+	downloading: 'loader-2',
 	success: 'check-circle',
 	error: 'alert-triangle',
 };
@@ -24,6 +25,7 @@ const STATE_CLASSES: Record<SyncState, string> = {
 	hashing: 'lumen-sync-active',
 	manifest: 'lumen-sync-active',
 	uploading: 'lumen-sync-active',
+	downloading: 'lumen-sync-active',
 	success: 'lumen-sync-success',
 	error: 'lumen-sync-error',
 };
@@ -142,6 +144,10 @@ export class SyncStatusBar {
 				return progress
 					? `Uploading ${progress.total} file(s)...`
 					: 'Uploading...';
+			case 'downloading':
+				return progress
+					? `Downloading... ${progress.current}/${progress.total}`
+					: 'Downloading...';
 			case 'success':
 				return this.lastFilesUploaded > 0
 					? `Synced ${this.lastFilesUploaded} file(s)`

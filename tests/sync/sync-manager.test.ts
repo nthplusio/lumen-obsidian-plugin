@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncManager } from '../../src/sync/sync-manager';
 import { DEFAULT_SETTINGS } from '../../src/types';
-import type { LumenSettings, FileManifestEntry, SyncManifestResponse } from '../../src/types';
+import type { LumenSettings, FileManifestEntry, SyncManifestResponse, SyncManifestResponseV2 } from '../../src/types';
 
 // ---------------------------------------------------------------------------
 // Mock obsidian module
@@ -58,6 +58,22 @@ function createMockFileHasher() {
 	};
 }
 
+function createDefaultV2Response(overrides: Partial<SyncManifestResponseV2> = {}): SyncManifestResponseV2 {
+	return {
+		sync_session_id: 'session-001',
+		needed_files: [],
+		deleted_files: [],
+		new_cursor: 'cursor-new',
+		upload_endpoint: '/api/workspaces/ws-001/sync/upload',
+		current_seq: 1,
+		server_changes: [],
+		server_deletions: [],
+		conflicts: [],
+		download_endpoint: '/api/workspaces/ws-001/sync/download',
+		...overrides,
+	};
+}
+
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
@@ -68,6 +84,7 @@ function createMockSyncClient() {
 			new_cursor: 'cursor-new',
 			upload_endpoint: '/api/workspaces/ws-001/sync/upload',
 		} satisfies SyncManifestResponse),
+		sendManifestV2: vi.fn().mockResolvedValue(createDefaultV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
 			accepted: 0,
@@ -76,6 +93,7 @@ function createMockSyncClient() {
 			indexing_triggered: false,
 			rejected_files: [],
 		}),
+		downloadFiles: vi.fn().mockResolvedValue({ files: [] }),
 		getSyncStatus: vi.fn(),
 		updateSettings: vi.fn(),
 	};
@@ -101,13 +119,19 @@ function createMockPlugin() {
 	return {
 		plugin: {
 			registerEvent: vi.fn(),
+			saveData: vi.fn().mockResolvedValue(undefined),
 			app: {
 				vault: {
 					on: vaultOn,
 					off: vi.fn(),
 					read: vi.fn().mockResolvedValue('content'),
+					create: vi.fn().mockResolvedValue(undefined),
+					modify: vi.fn().mockResolvedValue(undefined),
+					delete: vi.fn().mockResolvedValue(undefined),
+					createFolder: vi.fn().mockResolvedValue(undefined),
 					getAbstractFileByPath: vi.fn().mockReturnValue(null),
 					getMarkdownFiles: vi.fn().mockReturnValue([]),
+					getName: vi.fn().mockReturnValue('test-vault'),
 				},
 				workspace: {},
 			},
@@ -223,13 +247,10 @@ describe('SyncManager', () => {
 			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
 			// Server needs the file
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-002',
 				needed_files: ['notes/test.md'],
-				deleted_files: [],
-				new_cursor: 'cursor-new',
-				upload_endpoint: '/upload',
-			});
+			}));
 
 			// Mock reading the file for upload
 			const mockFile = createMockTFile('notes/test.md');
@@ -327,13 +348,10 @@ describe('SyncManager', () => {
 			});
 			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 's1',
 				needed_files: ['test.md'],
-				deleted_files: [],
-				new_cursor: 'c1',
-				upload_endpoint: '/up',
-			});
+			}));
 
 			const mockFile = createMockTFile('test.md');
 			mockPlugin.plugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
@@ -365,13 +383,9 @@ describe('SyncManager', () => {
 			});
 			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 's2',
-				needed_files: [],    // server already has this file
-				deleted_files: [],
-				new_cursor: 'c2',
-				upload_endpoint: '/up',
-			});
+			}));
 
 			const result = await manager.syncNow();
 
@@ -389,8 +403,8 @@ describe('SyncManager', () => {
 			expect(result.success).toBe(true);
 			expect(result.filesUploaded).toBe(0);
 			expect(result.filesDeleted).toBe(0);
-			// sendManifest should NOT be called (nothing to sync)
-			expect(syncClient.sendManifest).not.toHaveBeenCalled();
+			// sendManifestV2 should NOT be called (nothing to sync, no prior seq)
+			expect(syncClient.sendManifestV2).not.toHaveBeenCalled();
 		});
 
 		it('updates settings cursor after successful sync', async () => {
@@ -404,13 +418,10 @@ describe('SyncManager', () => {
 			});
 			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 's3',
-				needed_files: [],
-				deleted_files: [],
 				new_cursor: 'new-cursor-xyz',
-				upload_endpoint: '/up',
-			});
+			}));
 
 			await manager.syncNow();
 
@@ -642,13 +653,11 @@ describe('SyncManager', () => {
 			});
 			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
 
-			syncClient.sendManifest.mockResolvedValue({
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'conflict-session',
-				needed_files: [],
 				deleted_files: ['conflicted.md'],  // server deleted this
 				new_cursor: 'c-conflict',
-				upload_endpoint: '/up',
-			});
+			}));
 
 			const result = await manager.syncNow();
 

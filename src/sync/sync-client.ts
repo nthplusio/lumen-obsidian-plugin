@@ -18,7 +18,9 @@ import { requestUrl } from 'obsidian';
 import type {
 	FileManifestEntry,
 	SyncManifestResponse,
+	SyncManifestResponseV2,
 	SyncUploadResponse,
+	SyncDownloadResponse,
 	PluginRegistrationResponse,
 	SyncStatusResponse,
 } from '../types';
@@ -232,6 +234,107 @@ export class SyncClient {
 		}
 
 		return response.json as SyncStatusResponse;
+	}
+
+	// -----------------------------------------------------------------------
+	// V2 Methods (Two-Way Sync)
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Send a V2 manifest with device ID and sync sequence for two-way sync.
+	 *
+	 * The server responds with `server_changes`, `server_deletions`, and
+	 * `conflicts` in addition to the V1 `needed_files` and `deleted_files`.
+	 * If the server doesn't support V2, it returns a V1 response (no
+	 * `server_changes` field) and the caller falls back gracefully.
+	 */
+	async sendManifestV2(
+		files: FileManifestEntry[],
+		deviceId: string,
+		lastSyncSeq: number,
+		cursor?: string,
+	): Promise<SyncManifestResponseV2> {
+		const url = this.buildUrl('sync/manifest');
+
+		logger.debug('Sending V2 manifest:', {
+			fileCount: files.length,
+			deviceId,
+			lastSyncSeq,
+			hasCursor: !!cursor,
+		});
+
+		const body: Record<string, unknown> = {
+			files,
+			protocol_version: 2,
+			device_id: deviceId,
+			last_sync_seq: lastSyncSeq,
+		};
+		if (cursor) {
+			body.cursor = cursor;
+		}
+
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: this.jsonHeaders(),
+			body: JSON.stringify(body),
+		});
+
+		if (response.status !== 200) {
+			throw new Error(
+				`V2 manifest exchange failed: ${response.status} ${this.extractErrorMessage(response)}`,
+			);
+		}
+
+		const result = response.json as SyncManifestResponseV2;
+		logger.info('V2 manifest response:', {
+			sessionId: result.sync_session_id,
+			neededFiles: result.needed_files.length,
+			serverChanges: result.server_changes?.length ?? 0,
+			serverDeletions: result.server_deletions?.length ?? 0,
+			conflicts: result.conflicts?.length ?? 0,
+		});
+
+		return result;
+	}
+
+	/**
+	 * Download files from the server (pull path).
+	 *
+	 * Called after V2 manifest indicates `server_changes`. Files are
+	 * returned as base64-encoded content.
+	 *
+	 * BUG-3 fix: accepts optional endpoint parameter from server response
+	 * instead of hardcoding the download path.
+	 */
+	async downloadFiles(
+		sessionId: string,
+		paths: string[],
+		endpoint?: string,
+	): Promise<SyncDownloadResponse> {
+		const url = endpoint
+			? `${this.apiUrl}${endpoint}`
+			: this.buildUrl('sync/download');
+
+		logger.debug('Downloading files:', { sessionId, pathCount: paths.length, endpoint: endpoint ?? '(default)' });
+
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: this.jsonHeaders(),
+			body: JSON.stringify({
+				sync_session_id: sessionId,
+				paths,
+			}),
+		});
+
+		if (response.status !== 200) {
+			throw new Error(
+				`Download failed: ${response.status} ${this.extractErrorMessage(response)}`,
+			);
+		}
+
+		return response.json as SyncDownloadResponse;
 	}
 
 	// -----------------------------------------------------------------------
