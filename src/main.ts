@@ -8,6 +8,7 @@
 import { Menu, Notice, Plugin, TFile } from 'obsidian';
 import { registerLumenIcons } from './icons';
 import { ApiClient } from './api-client';
+import { ChatClient } from './chat-client';
 import { LumenMainView, VIEW_TYPE_LUMEN_MAIN } from './main-view';
 import { LumenHelpModal } from './help-modal';
 import { LumenDebugLogView, VIEW_TYPE_LUMEN_DEBUG_LOG } from './debug-log-view';
@@ -25,6 +26,7 @@ import { DEFAULT_SETTINGS, type LumenSettings } from './types';
 export default class LumenPlugin extends Plugin {
 	settings: LumenSettings = DEFAULT_SETTINGS;
 	apiClient: ApiClient = new ApiClient('', '');
+	chatClient: ChatClient | null = null;
 	api: LumenSearchAPI | null = null;
 
 	// Sync components — only initialized when apiKey + workspaceId are set
@@ -64,6 +66,17 @@ export default class LumenPlugin extends Plugin {
 			} catch {
 				// Server may be unreachable at startup — workspace ID will be resolved on next connection test
 			}
+		}
+
+		// Initialize chat client if configured
+		if (this.settings.apiKey && this.settings.workspaceId) {
+			this.chatClient = new ChatClient(
+				this.settings.apiUrl,
+				this.settings.apiKey,
+				this.settings.workspaceId,
+			);
+			// Pre-cache plan info (non-blocking)
+			this.chatClient.getWorkspacePlan().catch(() => {});
 		}
 
 		// Initialize sync if configured
@@ -175,6 +188,22 @@ export default class LumenPlugin extends Plugin {
 
 		// Keep logger debug mode in sync
 		logger.setDebugMode(this.settings.debugMode);
+
+		// Keep ChatClient in sync with settings
+		if (this.chatClient) {
+			this.chatClient.updateSettings(
+				this.settings.apiUrl,
+				this.settings.apiKey,
+				this.settings.workspaceId,
+			);
+		} else if (this.settings.apiKey && this.settings.workspaceId) {
+			// Create ChatClient if now configured
+			this.chatClient = new ChatClient(
+				this.settings.apiUrl,
+				this.settings.apiKey,
+				this.settings.workspaceId,
+			);
+		}
 
 		// Update sync components if they exist
 		if (this.syncClient) {

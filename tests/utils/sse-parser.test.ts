@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseSSEBuffer } from '../../src/utils/sse-parser';
+import { parseSSEBuffer, parseConversationSSE } from '../../src/utils/sse-parser';
+
+// ============================================================================
+// Legacy SSE Parser (parseSSEBuffer)
+// ============================================================================
 
 describe('parseSSEBuffer', () => {
 	it('parses a single content token', () => {
@@ -118,5 +122,221 @@ describe('parseSSEBuffer', () => {
 		const result = parseSSEBuffer(buffer);
 
 		expect(result.tokens).toEqual(['ok']);
+	});
+});
+
+// ============================================================================
+// Conversations API SSE Parser (parseConversationSSE)
+// ============================================================================
+
+describe('parseConversationSSE', () => {
+	it('parses a single content_block_delta event', () => {
+		const buffer = [
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"Hello"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['Hello']);
+		expect(result.sources).toEqual([]);
+		expect(result.metadata).toBeNull();
+		expect(result.errors).toEqual([]);
+	});
+
+	it('parses multiple content_block_delta events', () => {
+		const buffer = [
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"Hello"}}',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":" world"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['Hello', ' world']);
+	});
+
+	it('extracts lumen_metadata with sources and token usage', () => {
+		const buffer = [
+			'event: lumen_metadata',
+			'data: {"sources":[{"path":"notes/a.md","score":0.95},{"path":"notes/b.md","score":0.82}],"token_usage":{"input":150,"output":200},"turns_used":2,"turns_remaining":8}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual([]);
+		expect(result.sources).toEqual([
+			{ path: 'notes/a.md', score: 0.95 },
+			{ path: 'notes/b.md', score: 0.82 },
+		]);
+		expect(result.metadata).toEqual({
+			sources: [
+				{ path: 'notes/a.md', score: 0.95 },
+				{ path: 'notes/b.md', score: 0.82 },
+			],
+			tokenUsage: { input: 150, output: 200 },
+			turnsUsed: 2,
+			turnsRemaining: 8,
+		});
+	});
+
+	it('collects error events', () => {
+		const buffer = [
+			'event: error',
+			'data: {"error":{"message":"Rate limit exceeded"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.errors).toEqual(['Rate limit exceeded']);
+		expect(result.tokens).toEqual([]);
+	});
+
+	it('handles mixed events in one response', () => {
+		const buffer = [
+			'event: message_start',
+			'data: {"type":"message_start"}',
+			'',
+			'event: content_block_start',
+			'data: {"type":"content_block_start"}',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"Hello"}}',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":" world"}}',
+			'',
+			'event: content_block_stop',
+			'data: {"type":"content_block_stop"}',
+			'',
+			'event: lumen_metadata',
+			'data: {"sources":[{"path":"file.md","score":0.9}],"token_usage":{"input":10,"output":20},"turns_used":1,"turns_remaining":9}',
+			'',
+			'event: message_stop',
+			'data: {"type":"message_stop"}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['Hello', ' world']);
+		expect(result.sources).toEqual([{ path: 'file.md', score: 0.9 }]);
+		expect(result.metadata).not.toBeNull();
+		expect(result.metadata!.turnsUsed).toBe(1);
+		expect(result.errors).toEqual([]);
+	});
+
+	it('skips non-text_delta deltas', () => {
+		const buffer = [
+			'event: content_block_delta',
+			'data: {"delta":{"type":"input_json_delta","partial_json":"{\\"q\\""}}',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"Real text"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['Real text']);
+	});
+
+	it('handles malformed JSON blocks gracefully', () => {
+		const buffer = [
+			'event: content_block_delta',
+			'data: not valid json',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"ok"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['ok']);
+	});
+
+	it('handles empty buffer', () => {
+		const result = parseConversationSSE('');
+
+		expect(result.tokens).toEqual([]);
+		expect(result.sources).toEqual([]);
+		expect(result.metadata).toBeNull();
+		expect(result.errors).toEqual([]);
+	});
+
+	it('handles error event with fallback message key', () => {
+		const buffer = [
+			'event: error',
+			'data: {"message":"Something went wrong"}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+		expect(result.errors).toEqual(['Something went wrong']);
+	});
+
+	it('filters invalid source entries', () => {
+		const buffer = [
+			'event: lumen_metadata',
+			'data: {"sources":[{"path":"valid.md","score":0.9},{"invalid":true},{"path":"also-valid.md","score":0.5}],"token_usage":{"input":0,"output":0},"turns_used":0,"turns_remaining":0}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.sources).toEqual([
+			{ path: 'valid.md', score: 0.9 },
+			{ path: 'also-valid.md', score: 0.5 },
+		]);
+	});
+
+	it('handles lumen_metadata with missing optional fields', () => {
+		const buffer = [
+			'event: lumen_metadata',
+			'data: {"sources":[]}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.metadata).toEqual({
+			sources: [],
+			tokenUsage: { input: 0, output: 0 },
+			turnsUsed: 0,
+			turnsRemaining: 0,
+		});
+	});
+
+	it('skips ping events', () => {
+		const buffer = [
+			'event: ping',
+			'data: {}',
+			'',
+			'event: content_block_delta',
+			'data: {"delta":{"type":"text_delta","text":"content"}}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.tokens).toEqual(['content']);
 	});
 });

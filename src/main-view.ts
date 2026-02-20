@@ -8,7 +8,9 @@
 
 import { ItemView, MarkdownRenderer, Notice, WorkspaceLeaf, setIcon } from 'obsidian';
 import type LumenPlugin from './main';
-import type { ChatMessage, SearchResult } from './types';
+import type { ChatMessage, ChatSource, ConversationSummary, SearchResult } from './types';
+import { PlanUpgradeRequiredError, RateLimitExceededError } from './types';
+import { classifyError, type ClassifiedError } from './utils/error-classifier';
 import { logger } from './utils/logger';
 
 export const VIEW_TYPE_LUMEN_MAIN = 'lumen-main-view';
@@ -50,8 +52,25 @@ export class LumenMainView extends ItemView {
 	private chatMessagesContainer: HTMLElement | null = null;
 	private chatInput: HTMLTextAreaElement | null = null;
 	private chatSendButton: HTMLElement | null = null;
+	private chatStopButton: HTMLElement | null = null;
 	private chatEmptyState: HTMLElement | null = null;
 	private isChatSending = false;
+	private chatCancelled = false;
+
+	// Conversation state
+	private conversationId: string | null = null;
+	private conversationTitle: string | null = null;
+	private conversationDropdownOpen = false;
+	private conversationHeaderEl: HTMLElement | null = null;
+	private conversationDropdownEl: HTMLElement | null = null;
+
+	// Deep research state
+	private deepResearchEnabled = false;
+	private deepResearchToggle: HTMLElement | null = null;
+	private canDeepResearch = false;
+
+	// Rate limit state
+	private rateLimitBanner: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: LumenPlugin) {
 		super(leaf);
@@ -143,6 +162,39 @@ export class LumenMainView extends ItemView {
 		} else {
 			this.searchContainer?.addClass('lumen-view-hidden');
 			this.chatContainer?.removeClass('lumen-view-hidden');
+			// Refresh plan gating when switching to chat
+			this.refreshPlanGating();
+		}
+	}
+
+	/** Refresh plan info and update deep research toggle visibility */
+	private async refreshPlanGating(): Promise<void> {
+		const chatClient = this.plugin.chatClient;
+		if (!chatClient) {
+			this.canDeepResearch = false;
+			this.updateDeepResearchVisibility();
+			return;
+		}
+
+		try {
+			const planInfo = await chatClient.getWorkspacePlan();
+			this.canDeepResearch = planInfo.plan === 'plus' || planInfo.plan === 'pro';
+		} catch {
+			this.canDeepResearch = false;
+		}
+		this.updateDeepResearchVisibility();
+	}
+
+	/** Show/hide the deep research toggle based on plan */
+	private updateDeepResearchVisibility(): void {
+		if (!this.deepResearchToggle) return;
+		if (this.canDeepResearch) {
+			this.deepResearchToggle.removeClass('lumen-view-hidden');
+		} else {
+			this.deepResearchToggle.addClass('lumen-view-hidden');
+			this.deepResearchEnabled = false;
+			this.deepResearchToggle.removeClass('is-active');
+			this.deepResearchToggle.setAttribute('aria-pressed', 'false');
 		}
 	}
 
@@ -241,15 +293,42 @@ export class LumenMainView extends ItemView {
 	// -----------------------------------------------------------------------
 
 	private renderChatView(container: HTMLElement): void {
-		// Header bar with clear button
+		// Header bar with conversation title and actions
 		const header = container.createDiv({ cls: 'lumen-chat-header' });
-		const clearBtn = header.createEl('button', {
-			cls: 'lumen-chat-clear-btn',
-			attr: { 'aria-label': 'Clear chat history' },
+
+		// Conversation title (clickable to open dropdown)
+		this.conversationHeaderEl = header.createDiv({ cls: 'lumen-chat-header-title' });
+		this.conversationHeaderEl.addEventListener('click', () => {
+			this.toggleConversationDropdown();
 		});
-		setIcon(clearBtn, 'trash-2');
-		clearBtn.addEventListener('click', () => {
-			this.clearChat();
+		this.updateConversationHeader();
+
+		// Header actions
+		const headerActions = header.createDiv({ cls: 'lumen-chat-header-actions' });
+
+		// New Chat button
+		const newChatBtn = headerActions.createEl('button', {
+			cls: 'lumen-chat-new-button',
+			attr: { 'aria-label': 'New chat' },
+		});
+		setIcon(newChatBtn, 'plus');
+		newChatBtn.addEventListener('click', () => {
+			this.startNewChat();
+		});
+
+		// Delete conversation button
+		const deleteBtn = headerActions.createEl('button', {
+			cls: 'lumen-chat-clear-btn',
+			attr: { 'aria-label': 'Delete conversation' },
+		});
+		setIcon(deleteBtn, 'trash-2');
+		deleteBtn.addEventListener('click', () => {
+			this.deleteCurrentConversation();
+		});
+
+		// Conversation dropdown (hidden by default)
+		this.conversationDropdownEl = container.createDiv({
+			cls: 'lumen-chat-conversation-dropdown lumen-view-hidden',
 		});
 
 		// Messages area (scrollable)
@@ -259,8 +338,13 @@ export class LumenMainView extends ItemView {
 		this.chatEmptyState = this.chatMessagesContainer.createDiv({ cls: 'lumen-chat-empty-state' });
 		this.showChatEmptyState();
 
-		// Input area
+		// Rate limit banner (hidden by default)
 		const inputArea = container.createDiv({ cls: 'lumen-chat-input-area' });
+		this.rateLimitBanner = inputArea.createDiv({
+			cls: 'lumen-chat-rate-limit-banner lumen-view-hidden',
+		});
+
+		// Input row
 		const inputRow = inputArea.createDiv({ cls: 'lumen-chat-input-row' });
 
 		this.chatInput = inputRow.createEl('textarea', {
@@ -282,6 +366,19 @@ export class LumenMainView extends ItemView {
 			this.chatInput.style.height = Math.min(this.chatInput.scrollHeight, 120) + 'px';
 		});
 
+		// Deep research toggle
+		this.deepResearchToggle = inputRow.createEl('button', {
+			cls: 'lumen-chat-deep-research-toggle lumen-view-hidden',
+			attr: { 'aria-label': 'Toggle Deep Research', 'aria-pressed': 'false' },
+		});
+		setIcon(this.deepResearchToggle, 'sparkles');
+		this.deepResearchToggle.addEventListener('click', () => {
+			this.deepResearchEnabled = !this.deepResearchEnabled;
+			this.deepResearchToggle?.toggleClass('is-active', this.deepResearchEnabled);
+			this.deepResearchToggle?.setAttribute('aria-pressed', String(this.deepResearchEnabled));
+		});
+
+		// Send button
 		this.chatSendButton = inputRow.createEl('button', {
 			cls: 'lumen-chat-send-button',
 			attr: { 'aria-label': 'Send message' },
@@ -290,6 +387,181 @@ export class LumenMainView extends ItemView {
 		this.chatSendButton.addEventListener('click', () => {
 			this.sendChatMessage();
 		});
+
+		// Stop button (hidden by default, shown during sending)
+		this.chatStopButton = inputRow.createEl('button', {
+			cls: 'lumen-chat-stop-button lumen-view-hidden',
+			attr: { 'aria-label': 'Stop generating' },
+		});
+		setIcon(this.chatStopButton, 'square');
+		this.chatStopButton.addEventListener('click', () => {
+			this.cancelChat();
+		});
+	}
+
+	// -----------------------------------------------------------------------
+	// Conversation management
+	// -----------------------------------------------------------------------
+
+	/** Update the conversation header text */
+	private updateConversationHeader(): void {
+		if (!this.conversationHeaderEl) return;
+		this.conversationHeaderEl.empty();
+
+		const titleText = this.conversationTitle ?? 'New Chat';
+		this.conversationHeaderEl.createSpan({ text: titleText, cls: 'lumen-chat-header-title-text' });
+
+		const chevron = this.conversationHeaderEl.createSpan({ cls: 'lumen-chat-header-chevron' });
+		setIcon(chevron, 'chevron-down');
+	}
+
+	/** Toggle the conversation list dropdown */
+	private async toggleConversationDropdown(): Promise<void> {
+		this.conversationDropdownOpen = !this.conversationDropdownOpen;
+
+		if (!this.conversationDropdownEl) return;
+
+		if (this.conversationDropdownOpen) {
+			this.conversationDropdownEl.removeClass('lumen-view-hidden');
+			await this.loadConversationList();
+		} else {
+			this.conversationDropdownEl.addClass('lumen-view-hidden');
+		}
+	}
+
+	/** Load and render the conversation list in the dropdown */
+	private async loadConversationList(): Promise<void> {
+		if (!this.conversationDropdownEl || !this.plugin.chatClient) return;
+
+		this.conversationDropdownEl.empty();
+		this.conversationDropdownEl.createDiv({
+			text: 'Loading...',
+			cls: 'lumen-chat-conversation-loading',
+		});
+
+		try {
+			const result = await this.plugin.chatClient.listConversations(20);
+			this.conversationDropdownEl.empty();
+
+			if (result.conversations.length === 0) {
+				this.conversationDropdownEl.createDiv({
+					text: 'No conversations yet',
+					cls: 'lumen-chat-conversation-empty',
+				});
+				return;
+			}
+
+			for (const conv of result.conversations) {
+				this.renderConversationItem(conv);
+			}
+		} catch {
+			this.conversationDropdownEl.empty();
+			this.conversationDropdownEl.createDiv({
+				text: 'Failed to load conversations',
+				cls: 'lumen-chat-conversation-error',
+			});
+		}
+	}
+
+	/** Render a single conversation item in the dropdown */
+	private renderConversationItem(conv: ConversationSummary): void {
+		if (!this.conversationDropdownEl) return;
+
+		const item = this.conversationDropdownEl.createDiv({
+			cls: 'lumen-chat-conversation-item',
+		});
+
+		if (conv.id === this.conversationId) {
+			item.addClass('is-active');
+		}
+
+		item.createDiv({
+			text: conv.title ?? 'Untitled',
+			cls: 'lumen-chat-conversation-item-title',
+		});
+
+		const date = new Date(conv.updatedAt);
+		item.createDiv({
+			text: this.formatRelativeDate(date),
+			cls: 'lumen-chat-conversation-item-date',
+		});
+
+		item.addEventListener('click', () => {
+			this.switchToConversation(conv.id, conv.title);
+		});
+	}
+
+	/** Switch to an existing conversation */
+	private switchToConversation(id: string, title: string | null): void {
+		this.conversationId = id;
+		this.conversationTitle = title;
+		this.chatMessages = [];
+		this.updateConversationHeader();
+		this.conversationDropdownOpen = false;
+		this.conversationDropdownEl?.addClass('lumen-view-hidden');
+
+		// Clear messages and show empty state
+		if (this.chatMessagesContainer) {
+			this.chatMessagesContainer.empty();
+			this.chatEmptyState = this.chatMessagesContainer.createDiv({ cls: 'lumen-chat-empty-state' });
+			this.showChatEmptyState();
+		}
+	}
+
+	/** Start a new chat (clear conversation) */
+	private startNewChat(): void {
+		this.conversationId = null;
+		this.conversationTitle = null;
+		this.chatMessages = [];
+		this.deepResearchEnabled = false;
+		this.deepResearchToggle?.removeClass('is-active');
+		this.deepResearchToggle?.setAttribute('aria-pressed', 'false');
+		this.updateConversationHeader();
+		this.conversationDropdownOpen = false;
+		this.conversationDropdownEl?.addClass('lumen-view-hidden');
+
+		if (this.chatMessagesContainer) {
+			this.chatMessagesContainer.empty();
+			this.chatEmptyState = this.chatMessagesContainer.createDiv({ cls: 'lumen-chat-empty-state' });
+			this.showChatEmptyState();
+		}
+	}
+
+	/** Delete the current conversation */
+	private async deleteCurrentConversation(): Promise<void> {
+		if (!this.conversationId || !this.plugin.chatClient) {
+			this.startNewChat();
+			return;
+		}
+
+		try {
+			await this.plugin.chatClient.deleteConversation(this.conversationId);
+		} catch {
+			// Best effort — continue with local cleanup
+		}
+
+		this.startNewChat();
+	}
+
+	/** Format a date as a relative string (e.g., "2h ago", "Yesterday") */
+	private formatRelativeDate(date: Date): string {
+		const now = Date.now();
+		const diffMs = now - date.getTime();
+		const diffMin = Math.floor(diffMs / 60000);
+
+		if (diffMin < 1) return 'Just now';
+		if (diffMin < 60) return `${diffMin}m ago`;
+		const diffHr = Math.floor(diffMin / 60);
+		if (diffHr < 24) return `${diffHr}h ago`;
+		const diffDay = Math.floor(diffHr / 24);
+		if (diffDay === 1) return 'Yesterday';
+		if (diffDay < 7) return `${diffDay}d ago`;
+		return date.toLocaleDateString();
+	}
+
+	/** Cancel ongoing chat request */
+	private cancelChat(): void {
+		this.chatCancelled = true;
 	}
 
 	private showChatEmptyState(): void {
@@ -332,16 +604,21 @@ export class LumenMainView extends ItemView {
 		}
 	}
 
-	/** Send a chat message and stream the response via SSE */
+	/** Send a chat message via the conversations API with buffered SSE */
 	private async sendChatMessage(): Promise<void> {
 		const message = this.chatInput?.value.trim();
 		if (!message || this.isChatSending) return;
 
+		const chatClient = this.plugin.chatClient;
+
+		// Fall back to legacy ApiClient if ChatClient not available
+		if (!chatClient) {
+			await this.sendChatMessageLegacy(message);
+			return;
+		}
+
 		// Hide empty state on first message
 		this.chatEmptyState?.addClass('lumen-view-hidden');
-
-		// Build history before adding current message (server receives it as `message`)
-		const history = this.chatMessages.map(m => ({ role: m.role, content: m.content }));
 
 		// Add user message to UI
 		this.addChatMessage({ role: 'user', content: message });
@@ -355,34 +632,77 @@ export class LumenMainView extends ItemView {
 		// Create an empty assistant bubble with loading dots
 		const { bubble, contentEl, loadingEl } = this.createAssistantBubble();
 
+		// Show stop button, hide send button
+		this.chatSendButton?.addClass('lumen-view-hidden');
+		this.chatStopButton?.removeClass('lumen-view-hidden');
+
 		this.isChatSending = true;
+		this.chatCancelled = false;
 		let firstToken = true;
 		let streamedContent = '';
+		let rafPending = false;
 
-		logger.info(`Chat: sending message (${message.length} chars, ${history.length} history)`);
+		logger.info(`Chat: sending message (${message.length} chars, deep_research: ${this.deepResearchEnabled})`);
 
 		try {
-			const response = await this.plugin.apiClient.chatStream(
+			// Create conversation lazily if needed
+			if (!this.conversationId) {
+				const conv = await chatClient.createConversation();
+				this.conversationId = conv.id;
+			}
+
+			const response = await chatClient.sendMessage(
+				this.conversationId,
 				message,
-				history,
-				(token) => {
-					if (firstToken) {
-						loadingEl.remove();
-						firstToken = false;
-						logger.debug('Chat: first token received');
-					}
-					streamedContent += token;
-					contentEl.textContent = streamedContent;
-					if (this.chatMessagesContainer) {
-						this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
-					}
+				{
+					deepResearch: this.deepResearchEnabled,
+					onToken: (token) => {
+						if (this.chatCancelled) return;
+						if (firstToken) {
+							loadingEl.remove();
+							firstToken = false;
+							logger.debug('Chat: first token received');
+						}
+						streamedContent += token;
+						// Batch DOM updates to one per animation frame
+						if (!rafPending && typeof requestAnimationFrame === 'function') {
+							rafPending = true;
+							requestAnimationFrame(() => {
+								rafPending = false;
+								contentEl.textContent = streamedContent;
+								if (this.chatMessagesContainer) {
+									this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+								}
+							});
+						} else if (!rafPending) {
+							contentEl.textContent = streamedContent;
+						}
+					},
 				},
 			);
 
-			// Remove loading dots if no tokens arrived (e.g. empty response)
+			// Handle cancellation
+			if (this.chatCancelled) {
+				if (firstToken) loadingEl.remove();
+				contentEl.empty();
+				contentEl.createEl('p', {
+					text: 'Message cancelled.',
+					cls: 'lumen-chat-cancelled-text',
+				});
+				return;
+			}
+
+			// Remove loading dots if no tokens arrived
 			if (firstToken) loadingEl.remove();
 
-			logger.info(`Chat: stream complete (${response.content.length} chars, ${response.sources.length} sources)`);
+			logger.info(`Chat: complete (${response.content.length} chars, ${response.sources.length} sources)`);
+
+			// Update conversation title from response if first message
+			if (!this.conversationTitle && response.content.length > 0) {
+				// Use first 40 chars of message as title hint
+				this.conversationTitle = message.length > 40 ? message.slice(0, 40) + '...' : message;
+				this.updateConversationHeader();
+			}
 
 			// Re-render with proper markdown formatting
 			contentEl.empty();
@@ -390,7 +710,12 @@ export class LumenMainView extends ItemView {
 
 			// Add source chips
 			if (response.sources.length > 0) {
-				this.renderChatSources(bubble, response.sources);
+				this.renderChatSourcesWithScores(bubble, response.sources);
+			}
+
+			// Add turns info badge for deep research
+			if (response.metadata && this.deepResearchEnabled) {
+				this.renderTurnsInfo(bubble, response.metadata.turnsUsed, response.metadata.turnsRemaining);
 			}
 
 			// Push completed message to chat history
@@ -407,9 +732,98 @@ export class LumenMainView extends ItemView {
 			if (firstToken) loadingEl.remove();
 			bubble.remove();
 
-			const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-			logger.error(`Chat failed: ${errMsg}`);
+			if (err instanceof PlanUpgradeRequiredError) {
+				this.showChatUpgradePrompt(err.message);
+				// Auto-disable deep research
+				this.deepResearchEnabled = false;
+				this.deepResearchToggle?.removeClass('is-active');
+				this.deepResearchToggle?.setAttribute('aria-pressed', 'false');
+			} else if (err instanceof RateLimitExceededError) {
+				this.showRateLimitBanner(err.resetsAt);
+				this.showChatError(err.message);
+			} else {
+				const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
+				logger.error(`Chat failed: ${errMsg}`);
+				this.showChatError(errMsg);
+			}
+		} finally {
+			this.isChatSending = false;
+			this.chatCancelled = false;
+			// Restore send/stop button state
+			this.chatSendButton?.removeClass('lumen-view-hidden');
+			this.chatStopButton?.addClass('lumen-view-hidden');
+		}
+	}
 
+	/** Legacy send path using ApiClient.chatStream (for when ChatClient is not configured) */
+	private async sendChatMessageLegacy(message: string): Promise<void> {
+		// Hide empty state on first message
+		this.chatEmptyState?.addClass('lumen-view-hidden');
+
+		const history = this.chatMessages.map(m => ({ role: m.role, content: m.content }));
+
+		this.addChatMessage({ role: 'user', content: message });
+
+		if (this.chatInput) {
+			this.chatInput.value = '';
+			this.chatInput.style.height = 'auto';
+		}
+
+		const { bubble, contentEl, loadingEl } = this.createAssistantBubble();
+
+		this.isChatSending = true;
+		let firstToken = true;
+		let streamedContent = '';
+		let rafPending = false;
+
+		try {
+			const response = await this.plugin.apiClient.chatStream(
+				message,
+				history,
+				(token) => {
+					if (firstToken) {
+						loadingEl.remove();
+						firstToken = false;
+					}
+					streamedContent += token;
+					if (!rafPending && typeof requestAnimationFrame === 'function') {
+						rafPending = true;
+						requestAnimationFrame(() => {
+							rafPending = false;
+							contentEl.textContent = streamedContent;
+							if (this.chatMessagesContainer) {
+								this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+							}
+						});
+					} else if (!rafPending) {
+						contentEl.textContent = streamedContent;
+					}
+				},
+			);
+
+			if (firstToken) loadingEl.remove();
+
+			contentEl.empty();
+			await MarkdownRenderer.render(this.app, response.content, contentEl, '', this);
+
+			if (response.sources.length > 0) {
+				this.renderChatSources(bubble, response.sources);
+			}
+
+			this.chatMessages.push({
+				role: 'assistant',
+				content: response.content,
+				sources: response.sources,
+			});
+
+			if (this.chatMessagesContainer) {
+				this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
+			}
+		} catch (err) {
+			if (firstToken) loadingEl.remove();
+			bubble.remove();
+
+			const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
 			if (errMsg.includes('subscription') || errMsg.includes('Upgrade')) {
 				this.showChatUpgradePrompt(errMsg);
 			} else {
@@ -463,16 +877,9 @@ export class LumenMainView extends ItemView {
 		this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
 	}
 
-	/** Clear all chat messages and reset to empty state */
+	/** Clear all chat messages and reset to empty state (alias for startNewChat) */
 	private clearChat(): void {
-		this.chatMessages = [];
-		if (this.chatMessagesContainer) {
-			this.chatMessagesContainer.empty();
-			this.chatEmptyState = this.chatMessagesContainer.createDiv({ cls: 'lumen-chat-empty-state' });
-			this.showChatEmptyState();
-		}
-		// Best-effort server-side clear
-		this.plugin.apiClient.clearChatHistory().catch(() => {});
+		this.startNewChat();
 	}
 
 	/** Add a message bubble to the chat */
@@ -502,16 +909,20 @@ export class LumenMainView extends ItemView {
 			contentEl.createEl('p', { text: msg.content });
 		}
 
-		// Sources
+		// Sources (handle both string[] and ChatSource[])
 		if (msg.sources && msg.sources.length > 0) {
-			this.renderChatSources(bubble, msg.sources);
+			if (typeof msg.sources[0] === 'string') {
+				this.renderChatSources(bubble, msg.sources as string[]);
+			} else {
+				this.renderChatSourcesWithScores(bubble, msg.sources as ChatSource[]);
+			}
 		}
 
 		// Scroll to bottom
 		this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
 	}
 
-	/** Render clickable source file chips below an assistant message */
+	/** Render clickable source file chips below an assistant message (legacy string sources) */
 	private renderChatSources(container: HTMLElement, sources: string[]): void {
 		const sourcesEl = container.createDiv({ cls: 'lumen-chat-sources' });
 		sourcesEl.createSpan({ text: 'Sources:', cls: 'lumen-chat-sources-label' });
@@ -527,6 +938,79 @@ export class LumenMainView extends ItemView {
 				this.openDocument(source);
 			});
 		}
+	}
+
+	/** Render source chips with relevance scores (conversations API) */
+	private renderChatSourcesWithScores(container: HTMLElement, sources: ChatSource[]): void {
+		const sourcesEl = container.createDiv({ cls: 'lumen-chat-sources' });
+		sourcesEl.createSpan({ text: 'Sources:', cls: 'lumen-chat-sources-label' });
+
+		for (const source of sources) {
+			const chip = sourcesEl.createEl('button', {
+				cls: 'lumen-chat-source-chip',
+			});
+			const fileIcon = chip.createSpan({ cls: 'lumen-chat-source-icon' });
+			setIcon(fileIcon, 'file-text');
+			chip.createSpan({ text: this.filenameFromPath(source.path) });
+
+			// Score badge
+			const scorePercent = Math.round(source.score * 100);
+			if (scorePercent > 0) {
+				chip.createSpan({
+					text: `${scorePercent}%`,
+					cls: 'lumen-chat-source-score',
+				});
+			}
+
+			chip.addEventListener('click', () => {
+				this.openDocument(source.path);
+			});
+		}
+	}
+
+	/** Render a turns info badge for deep research responses */
+	private renderTurnsInfo(container: HTMLElement, turnsUsed: number, turnsRemaining: number): void {
+		const badge = container.createDiv({ cls: 'lumen-chat-turns-info' });
+		const icon = badge.createSpan({ cls: 'lumen-chat-turns-icon' });
+		setIcon(icon, 'sparkles');
+		badge.createSpan({
+			text: `Deep Research · ${turnsUsed} turn${turnsUsed !== 1 ? 's' : ''} used · ${turnsRemaining} remaining`,
+		});
+	}
+
+	/** Show rate limit banner above the input */
+	private showRateLimitBanner(resetsAt: string): void {
+		if (!this.rateLimitBanner) return;
+
+		this.rateLimitBanner.empty();
+		this.rateLimitBanner.removeClass('lumen-view-hidden');
+
+		const icon = this.rateLimitBanner.createSpan({ cls: 'lumen-chat-rate-limit-icon' });
+		setIcon(icon, 'alert-triangle');
+
+		let resetText = 'soon';
+		if (resetsAt) {
+			const resetDate = new Date(resetsAt);
+			const diffMs = resetDate.getTime() - Date.now();
+			if (diffMs > 0) {
+				const diffMin = Math.ceil(diffMs / 60000);
+				resetText = diffMin <= 1 ? 'in about a minute' : `in ~${diffMin} minutes`;
+			}
+		}
+
+		this.rateLimitBanner.createSpan({
+			text: `Rate limit reached. Resets ${resetText}.`,
+			cls: 'lumen-chat-rate-limit-text',
+		});
+
+		const dismissBtn = this.rateLimitBanner.createEl('button', {
+			cls: 'lumen-chat-rate-limit-dismiss',
+			attr: { 'aria-label': 'Dismiss' },
+		});
+		setIcon(dismissBtn, 'x');
+		dismissBtn.addEventListener('click', () => {
+			this.rateLimitBanner?.addClass('lumen-view-hidden');
+		});
 	}
 
 	/** Show a loading indicator in the chat */
@@ -623,10 +1107,10 @@ export class LumenMainView extends ItemView {
 				return;
 			}
 
-			const errorInfo = this.classifyError(err);
+			const classified = classifyError(err);
 
 			// Auto-retry for transient errors
-			if (errorInfo.retryable && retryCount < MAX_RETRIES) {
+			if (classified.retryable && retryCount < MAX_RETRIES) {
 				this.showStatus('retrying', retryCount + 1);
 				await this.delay(RETRY_DELAY_MS * (retryCount + 1));
 				// Re-check if still relevant
@@ -636,7 +1120,7 @@ export class LumenMainView extends ItemView {
 				return;
 			}
 
-			this.showSearchError(errorInfo, query);
+			this.showSearchError(classified, query);
 		}
 	}
 
@@ -953,76 +1437,6 @@ export class LumenMainView extends ItemView {
 		}
 	}
 
-	/** Classify an error for retry logic and user messaging */
-	private classifyError(err: unknown): ErrorInfo {
-		if (!(err instanceof Error)) {
-			return { message: 'An unexpected error occurred.', retryable: false, type: 'unknown' };
-		}
-
-		const msg = err.message;
-
-		// Auth errors — not retryable, need user action
-		if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('Authentication')) {
-			return {
-				message: 'Invalid or expired API key. Check your key in Settings \u2192 Lumen.',
-				retryable: false,
-				type: 'auth',
-			};
-		}
-		if (msg.includes('403') || msg.includes('Forbidden')) {
-			return {
-				message: 'Access denied. Your API key may lack the required permissions.',
-				retryable: false,
-				type: 'auth',
-			};
-		}
-
-		// Rate limiting — retryable
-		if (msg.includes('429') || msg.includes('rate limit') || msg.includes('Too Many')) {
-			return {
-				message: 'Rate limited. Waiting before retrying...',
-				retryable: true,
-				type: 'rate-limit',
-			};
-		}
-
-		// Server errors — retryable
-		if (msg.includes('500') || msg.includes('502') || msg.includes('503')) {
-			return {
-				message: 'Server error. The Lumen server may be restarting.',
-				retryable: true,
-				type: 'server',
-			};
-		}
-
-		// Network errors — retryable
-		if (msg.includes('ENOTFOUND') || msg.includes('getaddrinfo')) {
-			return {
-				message: 'Server not found. Check the URL in Settings \u2192 Lumen.',
-				retryable: false,
-				type: 'network',
-			};
-		}
-		if (msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
-			return {
-				message: 'Could not connect to server. It may be down or unreachable.',
-				retryable: true,
-				type: 'network',
-			};
-		}
-
-		// 404 — wrong URL, not retryable
-		if (msg.includes('404')) {
-			return {
-				message: 'MCP endpoint not found. Verify the URL points to a Lumen server.',
-				retryable: false,
-				type: 'config',
-			};
-		}
-
-		return { message: msg, retryable: false, type: 'unknown' };
-	}
-
 	/** Promise-based delay helper */
 	private delay(ms: number): Promise<void> {
 		return new Promise(resolve => setTimeout(resolve, ms));
@@ -1077,7 +1491,7 @@ export class LumenMainView extends ItemView {
 		}
 	}
 
-	private showSearchError(errorInfo: ErrorInfo, query: string): void {
+	private showSearchError(errorInfo: ClassifiedError, query: string): void {
 		if (!this.resultsContainer || !this.statusContainer) return;
 		this.statusContainer.empty();
 		this.resultsContainer.empty();
@@ -1086,12 +1500,13 @@ export class LumenMainView extends ItemView {
 
 		// Icon
 		const iconEl = errorEl.createDiv({ cls: 'lumen-error-icon' });
-		setIcon(iconEl, errorInfo.type === 'auth' ? 'key' : 'alert-triangle');
+		setIcon(iconEl, errorInfo.category === 'auth' ? 'key' : 'alert-triangle');
 
 		// Title
-		const title = errorInfo.type === 'auth' ? 'Authentication Error'
-			: errorInfo.type === 'network' ? 'Connection Error'
-			: errorInfo.type === 'rate-limit' ? 'Rate Limited'
+		const title = errorInfo.category === 'auth' ? 'Authentication Error'
+			: errorInfo.category === 'network' ? 'Connection Error'
+			: errorInfo.category === 'timeout' ? 'Connection Error'
+			: errorInfo.category === 'rate-limit' ? 'Rate Limited'
 			: 'Search Error';
 		errorEl.createEl('p', { text: title, cls: 'lumen-error-title' });
 
@@ -1113,7 +1528,7 @@ export class LumenMainView extends ItemView {
 		}
 
 		// Settings link for auth/config errors
-		if (errorInfo.type === 'auth' || errorInfo.type === 'config') {
+		if (errorInfo.category === 'auth' || errorInfo.category === 'config') {
 			const settingsBtn = actionsEl.createEl('button', {
 				text: 'Open Settings',
 				cls: 'lumen-settings-link',
@@ -1125,7 +1540,7 @@ export class LumenMainView extends ItemView {
 		}
 
 		// Test Connection button for network/server errors
-		if (errorInfo.type === 'network' || errorInfo.type === 'server') {
+		if (errorInfo.category === 'network' || errorInfo.category === 'server' || errorInfo.category === 'timeout') {
 			const testBtn = actionsEl.createEl('button', {
 				text: 'Test Connection',
 				cls: 'lumen-test-button',
@@ -1164,11 +1579,4 @@ export class LumenMainView extends ItemView {
 			(this.app as any).setting?.openTabById?.('lumen-search');
 		});
 	}
-}
-
-/** Error classification for retry and display logic */
-interface ErrorInfo {
-	message: string;
-	retryable: boolean;
-	type: 'auth' | 'network' | 'server' | 'rate-limit' | 'config' | 'unknown';
 }

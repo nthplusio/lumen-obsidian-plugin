@@ -145,12 +145,83 @@
    Chat UI
    ============================================ */
 
-/* Chat header with actions */
+/* Chat header with conversation title and actions */
 .lumen-chat-header {
 	display: flex;
-	justify-content: flex-end;
-	padding: 4px 8px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 8px;
 	flex-shrink: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-chat-header-title {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	padding: 2px 6px;
+	border-radius: 6px;
+	transition: background 150ms ease;
+	overflow: hidden;
+	flex: 1;
+	min-width: 0;
+}
+
+.lumen-chat-header-title:hover {
+	background: var(--background-modifier-hover);
+}
+
+.lumen-chat-header-title-text {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.lumen-chat-header-chevron {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	color: var(--text-faint);
+}
+
+.lumen-chat-header-chevron svg {
+	width: 12px;
+	height: 12px;
+}
+
+.lumen-chat-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.lumen-chat-new-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.lumen-chat-new-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+}
+
+.lumen-chat-new-button svg {
+	width: 14px;
+	height: 14px;
 }
 
 .lumen-chat-clear-btn {
@@ -175,6 +246,54 @@
 .lumen-chat-clear-btn svg {
 	width: 14px;
 	height: 14px;
+}
+
+/* Conversation dropdown */
+.lumen-chat-conversation-dropdown {
+	max-height: 250px;
+	overflow-y: auto;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+
+.lumen-chat-conversation-item {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 8px 12px;
+	cursor: pointer;
+	transition: background 100ms ease;
+}
+
+.lumen-chat-conversation-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.lumen-chat-conversation-item.is-active {
+	background: var(--background-secondary);
+	border-left: 2px solid var(--interactive-accent);
+}
+
+.lumen-chat-conversation-item-title {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.lumen-chat-conversation-item-date {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.lumen-chat-conversation-loading,
+.lumen-chat-conversation-empty,
+.lumen-chat-conversation-error {
+	padding: 16px 12px;
+	text-align: center;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
 }
 
 /* Messages area (scrollable) */
@@ -329,6 +448,174 @@
 .lumen-chat-send-button svg {
 	width: 16px;
 	height: 16px;
+}
+
+/* Deep research toggle */
+.lumen-chat-deep-research-toggle {
+	flex-shrink: 0;
+	width: 38px;
+	height: 38px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 180ms ease;
+}
+
+.lumen-chat-deep-research-toggle:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--text-muted);
+}
+
+.lumen-chat-deep-research-toggle.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.lumen-chat-deep-research-toggle svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* Stop button */
+.lumen-chat-stop-button {
+	flex-shrink: 0;
+	width: 38px;
+	height: 38px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 10px;
+	background: var(--text-error);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.lumen-chat-stop-button:hover {
+	opacity: 0.9;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.lumen-chat-stop-button:active {
+	transform: scale(0.93);
+}
+
+.lumen-chat-stop-button svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Rate limit banner */
+.lumen-chat-rate-limit-banner {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	margin-bottom: 8px;
+	border-radius: 8px;
+	background: var(--background-modifier-error);
+	border: 1px solid rgba(var(--color-red-rgb, 255, 0, 0), 0.15);
+	font-size: var(--font-ui-small);
+	color: var(--text-error);
+}
+
+.lumen-chat-rate-limit-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.lumen-chat-rate-limit-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.lumen-chat-rate-limit-text {
+	flex: 1;
+}
+
+.lumen-chat-rate-limit-dismiss {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-error);
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: background 150ms ease;
+}
+
+.lumen-chat-rate-limit-dismiss:hover {
+	background: rgba(var(--color-red-rgb, 255, 0, 0), 0.1);
+}
+
+.lumen-chat-rate-limit-dismiss svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* Cancelled message text */
+.lumen-chat-cancelled-text {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+/* Source score badge within chip */
+.lumen-chat-source-score {
+	font-size: 0.85em;
+	color: var(--text-faint);
+	margin-left: 2px;
+}
+
+/* Turns info badge for deep research */
+.lumen-chat-turns-info {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-top: 8px;
+	padding: 4px 10px;
+	border-radius: 8px;
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.lumen-chat-turns-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-accent);
+}
+
+.lumen-chat-turns-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* Plan upgrade message bubble */
+.lumen-chat-plan-upgrade {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 8px 0;
+	padding: 10px 14px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
 }
 
 /* Chat messages */

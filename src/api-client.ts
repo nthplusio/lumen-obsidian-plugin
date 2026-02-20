@@ -7,6 +7,7 @@
 
 import { requestUrl } from 'obsidian';
 import type { ChatResponse, SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
+import { LumenHttpClient } from './http-client';
 import { parseSSEBuffer } from './utils/sse-parser';
 import { logger } from './utils/logger';
 
@@ -15,23 +16,9 @@ import { logger } from './utils/logger';
  *
  * Created once with apiUrl + apiKey, then used to call individual endpoints.
  */
-export class ApiClient {
-	constructor(
-		private apiUrl: string,
-		private apiKey: string,
-	) {}
-
-	/** Normalize base URL (strip trailing slashes) */
-	private get baseUrl(): string {
-		return this.apiUrl.replace(/\/+$/, '');
-	}
-
-	/** Common headers for authenticated requests */
-	private get headers(): Record<string, string> {
-		return {
-			'Content-Type': 'application/json',
-			'X-API-Key': this.apiKey,
-		};
+export class ApiClient extends LumenHttpClient {
+	constructor(apiUrl: string, apiKey: string) {
+		super(apiUrl, apiKey);
 	}
 
 	/** Update connection settings (e.g., after settings change) */
@@ -117,12 +104,10 @@ export class ApiClient {
 	}
 
 	/**
-	 * Chat with the vault via SSE.
+	 * Chat with the vault via SSE (legacy /api/chat endpoint).
 	 *
-	 * Uses Obsidian's `requestUrl` (CORS-safe in Electron) which buffers
-	 * the full SSE response. Tokens are replayed via onToken after the
-	 * server finishes. The streaming API surface is preserved so we can
-	 * switch to real streaming if Electron adds ReadableStream support.
+	 * @deprecated Use `ChatClient.sendMessage()` instead, which supports
+	 * conversations, deep research, plan gating, and typed error handling.
 	 *
 	 * @param onToken Called for each content token parsed from the SSE response
 	 * @returns Completed response with full content and sources
@@ -175,7 +160,7 @@ export class ApiClient {
 		return { content: fullContent, sources: parseResult.sources };
 	}
 
-	/** Fetch chat history from the server */
+	/** @deprecated Use ChatClient with conversation API instead. */
 	async chatHistory(options: { limit?: number; before?: string } = {}): Promise<{ messages: Array<{ id: string; role: string; content: string; sources: string[]; createdAt: string }> }> {
 		const params = new URLSearchParams();
 		if (options.limit !== undefined) params.set('limit', String(options.limit));
@@ -190,7 +175,7 @@ export class ApiClient {
 		return response.json as { messages: Array<{ id: string; role: string; content: string; sources: string[]; createdAt: string }> };
 	}
 
-	/** Clear all chat history on the server */
+	/** @deprecated Use ChatClient with conversation API instead. */
 	async clearChatHistory(): Promise<void> {
 		await requestUrl({
 			url: `${this.baseUrl}/api/chat/history`,

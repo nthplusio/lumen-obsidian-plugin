@@ -180,14 +180,123 @@ export interface SyncDownloadResponse {
 export interface ChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
-	sources?: string[];
+	sources?: Array<string | ChatSource>;
 }
 
-/** Server response to a chat request */
+/** A source with path and relevance score */
+export interface ChatSource {
+	path: string;
+	score: number;
+}
+
+/** Server response to a chat request (legacy /api/chat) */
 export interface ChatResponse {
 	content: string;
 	sources: string[];
 	conversation_id?: string;
+}
+
+// ============================================================================
+// Plan / Subscription Types
+// ============================================================================
+
+/** Workspace subscription tier */
+export type PlanTier = 'starter' | 'plus' | 'pro' | null;
+
+/** Cached workspace plan info */
+export interface WorkspacePlanInfo {
+	plan: PlanTier;
+	subscriptionStatus: string | null;
+	cachedAt: number;
+}
+
+// ============================================================================
+// Conversation API Types
+// ============================================================================
+
+/** Summary of a conversation for listing */
+export interface ConversationSummary {
+	id: string;
+	title: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** Response from GET /api/conversations */
+export interface ConversationListResponse {
+	conversations: ConversationSummary[];
+	total: number;
+}
+
+/** Request body for POST /api/conversations/:id/messages */
+export interface SendMessageRequest {
+	message: string;
+	deep_research?: boolean;
+}
+
+// ============================================================================
+// SSE Streaming Types (Conversations API)
+// ============================================================================
+
+/** Metadata from lumen_metadata SSE event */
+export interface StreamMetadata {
+	sources: ChatSource[];
+	tokenUsage: { input: number; output: number };
+	turnsUsed: number;
+	turnsRemaining: number;
+}
+
+/** Result of a buffered SSE chat stream */
+export interface ChatStreamResult {
+	content: string;
+	sources: ChatSource[];
+	metadata: StreamMetadata | null;
+}
+
+// ============================================================================
+// Chat Error Types
+// ============================================================================
+
+/** 403 wire format: feature requires higher plan */
+export interface PlanUpgradeError {
+	error: 'plan_upgrade_required';
+	message: string;
+	required_plan: string;
+}
+
+/** 429 wire format: rate limit exceeded */
+export interface RateLimitError {
+	error: 'rate_limit_exceeded';
+	message: string;
+	limit: number;
+	remaining: number;
+	resets_at: string;
+}
+
+/** Thrown when server returns 403 with plan_upgrade_required */
+export class PlanUpgradeRequiredError extends Error {
+	readonly requiredPlan: string;
+
+	constructor(message: string, requiredPlan: string) {
+		super(message);
+		this.name = 'PlanUpgradeRequiredError';
+		this.requiredPlan = requiredPlan;
+	}
+}
+
+/** Thrown when server returns 429 with rate limit info */
+export class RateLimitExceededError extends Error {
+	readonly limit: number;
+	readonly remaining: number;
+	readonly resetsAt: string;
+
+	constructor(message: string, limit: number, remaining: number, resetsAt: string) {
+		super(message);
+		this.name = 'RateLimitExceededError';
+		this.limit = limit;
+		this.remaining = remaining;
+		this.resetsAt = resetsAt;
+	}
 }
 
 /** Options for similar document search */

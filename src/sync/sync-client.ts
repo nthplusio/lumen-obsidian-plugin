@@ -24,26 +24,24 @@ import type {
 	PluginRegistrationResponse,
 	SyncStatusResponse,
 } from '../types';
+import { LumenHttpClient } from '../http-client';
 import { logger } from '../utils/logger';
 
 // ---------------------------------------------------------------------------
 // SyncClient
 // ---------------------------------------------------------------------------
 
-export class SyncClient {
-	private apiUrl: string;
-	private apiKey: string;
+export class SyncClient extends LumenHttpClient {
 	private workspaceId: string;
 
 	constructor(apiUrl: string, apiKey: string, workspaceId: string) {
-		this.apiUrl = apiUrl.replace(/\/+$/, '');
-		this.apiKey = apiKey;
+		super(apiUrl, apiKey);
 		this.workspaceId = workspaceId;
 	}
 
 	/** Swap credentials (e.g. after a settings change). */
 	updateSettings(apiUrl: string, apiKey: string, workspaceId: string): void {
-		this.apiUrl = apiUrl.replace(/\/+$/, '');
+		this.apiUrl = apiUrl;
 		this.apiKey = apiKey;
 		this.workspaceId = workspaceId;
 	}
@@ -65,7 +63,7 @@ export class SyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: this.jsonHeaders(),
+			headers: this.headers,
 			body: JSON.stringify({
 				device_id: deviceId,
 				device_name: deviceName,
@@ -114,7 +112,7 @@ export class SyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: this.jsonHeaders(),
+			headers: this.headers,
 			body: JSON.stringify(body),
 		});
 
@@ -343,15 +341,7 @@ export class SyncClient {
 
 	/** Build a full URL for a sync sub-path. */
 	private buildUrl(subpath: string): string {
-		return `${this.apiUrl}/api/workspaces/${this.workspaceId}/${subpath}`;
-	}
-
-	/** Standard headers for JSON requests with API key auth. */
-	private jsonHeaders(): Record<string, string> {
-		return {
-			'Content-Type': 'application/json',
-			'X-API-Key': this.apiKey,
-		};
+		return `${this.baseUrl}/api/workspaces/${this.workspaceId}/${subpath}`;
 	}
 
 	/**

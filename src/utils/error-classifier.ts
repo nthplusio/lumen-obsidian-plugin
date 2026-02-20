@@ -6,7 +6,7 @@
  */
 
 /** High-level error category */
-export type ErrorCategory = 'network' | 'auth' | 'server' | 'timeout' | 'validation' | 'unknown';
+export type ErrorCategory = 'network' | 'auth' | 'server' | 'timeout' | 'validation' | 'rate-limit' | 'config' | 'unknown';
 
 /** Classified error with user-facing message and retry guidance */
 export interface ClassifiedError {
@@ -63,7 +63,7 @@ export function classifyError(err: unknown): ClassifiedError {
 	}
 	if (msg.includes('404') || msg.includes('Not Found')) {
 		return {
-			category: 'validation',
+			category: 'config',
 			message: 'Endpoint not found. Verify the server URL in Settings.',
 			retryable: false,
 			statusCode: 404,
@@ -97,7 +97,7 @@ export function classifyError(err: unknown): ClassifiedError {
 	// --- Rate limiting (retryable with backoff) ---
 	if (msg.includes('429') || msg.includes('rate limit') || msg.includes('Too Many') || msg.includes('RATE_LIMIT')) {
 		return {
-			category: 'server',
+			category: 'rate-limit',
 			message: 'Rate limited. Waiting before retrying...',
 			retryable: true,
 			statusCode: 429,

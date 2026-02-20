@@ -201,6 +201,7 @@ function buildView(opts: {
 	chatFn?: (...args: any[]) => Promise<any>;
 	testConnectionFn?: (...args: any[]) => Promise<any>;
 	listTagsFn?: (...args: any[]) => Promise<any>;
+	chatClient?: any;
 } = {}) {
 	const contentEl = createMockElement('div');
 	const containerEl = createMockElement('div');
@@ -222,6 +223,8 @@ function buildView(opts: {
 
 	const listTagsFn = opts.listTagsFn ?? vi.fn().mockResolvedValue([]);
 
+	const mockChatClient = opts.chatClient ?? null;
+
 	const mockPlugin = {
 		settings: {
 			apiUrl: opts.apiUrl ?? 'http://localhost:8080',
@@ -234,6 +237,7 @@ function buildView(opts: {
 			testConnection: testConnectionFn,
 			listTags: listTagsFn,
 		},
+		chatClient: mockChatClient,
 	} as any;
 
 	const mockLeaf = {} as any;
@@ -787,7 +791,7 @@ describe('LumenMainView', () => {
 			await executeSearchDirectly(view, 'test');
 
 			const detail = findFirstByClass(contentEl, 'lumen-error-detail');
-			expect(detail?.textContent).toContain('endpoint not found');
+			expect(detail?.textContent).toContain('Endpoint not found');
 		});
 
 		it('shows rate limit error title', async () => {
@@ -1882,6 +1886,185 @@ describe('LumenMainView', () => {
 
 				const chips = findByClass(contentEl, 'lumen-chat-source-chip');
 				expect(chips).toHaveLength(2);
+			});
+		});
+
+		describe('conversation header', () => {
+			it('renders conversation header with title', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const header = findFirstByClass(contentEl, 'lumen-chat-header-title');
+				expect(header).toBeDefined();
+
+				const titleText = findFirstByClass(contentEl, 'lumen-chat-header-title-text');
+				expect(titleText?.textContent).toBe('New Chat');
+			});
+
+			it('renders new chat button', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const newBtn = findFirstByClass(contentEl, 'lumen-chat-new-button');
+				expect(newBtn).toBeDefined();
+			});
+
+			it('new chat button clears conversation state', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				// Set a conversation
+				(view as any).conversationId = 'conv-123';
+				(view as any).conversationTitle = 'Old Chat';
+
+				const newBtn = findFirstByClass(contentEl, 'lumen-chat-new-button')!;
+				fireEvent(newBtn, 'click');
+
+				expect((view as any).conversationId).toBeNull();
+				expect((view as any).conversationTitle).toBeNull();
+			});
+		});
+
+		describe('deep research toggle', () => {
+			it('renders deep research toggle (hidden by default)', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const toggle = findFirstByClass(contentEl, 'lumen-chat-deep-research-toggle');
+				expect(toggle).toBeDefined();
+				expect(toggle!._classes.has('lumen-view-hidden')).toBe(true);
+			});
+
+			it('shows toggle when canDeepResearch is true', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				(view as any).canDeepResearch = true;
+				(view as any).updateDeepResearchVisibility();
+
+				const toggle = findFirstByClass(contentEl, 'lumen-chat-deep-research-toggle');
+				expect(toggle!._classes.has('lumen-view-hidden')).toBe(false);
+			});
+
+			it('toggles deep research on click', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				(view as any).canDeepResearch = true;
+				(view as any).updateDeepResearchVisibility();
+
+				const toggle = findFirstByClass(contentEl, 'lumen-chat-deep-research-toggle')!;
+				fireEvent(toggle, 'click');
+
+				expect((view as any).deepResearchEnabled).toBe(true);
+				expect(toggle._classes.has('is-active')).toBe(true);
+				expect(toggle._attrs['aria-pressed']).toBe('true');
+			});
+
+			it('disables deep research when plan is insufficient', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				(view as any).deepResearchEnabled = true;
+				(view as any).canDeepResearch = false;
+				(view as any).updateDeepResearchVisibility();
+
+				expect((view as any).deepResearchEnabled).toBe(false);
+			});
+		});
+
+		describe('stop button', () => {
+			it('renders stop button (hidden by default)', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const stopBtn = findFirstByClass(contentEl, 'lumen-chat-stop-button');
+				expect(stopBtn).toBeDefined();
+				expect(stopBtn!._classes.has('lumen-view-hidden')).toBe(true);
+			});
+		});
+
+		describe('rate limit banner', () => {
+			it('renders rate limit banner (hidden by default)', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				const banner = findFirstByClass(contentEl, 'lumen-chat-rate-limit-banner');
+				expect(banner).toBeDefined();
+				expect(banner!._classes.has('lumen-view-hidden')).toBe(true);
+			});
+
+			it('shows banner with reset time', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				(view as any).showRateLimitBanner('2099-01-01T00:00:00Z');
+
+				const banner = findFirstByClass(contentEl, 'lumen-chat-rate-limit-banner');
+				expect(banner!._classes.has('lumen-view-hidden')).toBe(false);
+
+				const text = findFirstByClass(contentEl, 'lumen-chat-rate-limit-text');
+				expect(text?.textContent).toContain('Rate limit reached');
+			});
+
+			it('dismisses banner on X click', async () => {
+				const { view, contentEl } = buildView();
+				await view.onOpen();
+
+				(view as any).showRateLimitBanner('2099-01-01T00:00:00Z');
+
+				const dismissBtn = findFirstByClass(contentEl, 'lumen-chat-rate-limit-dismiss')!;
+				fireEvent(dismissBtn, 'click');
+
+				const banner = findFirstByClass(contentEl, 'lumen-chat-rate-limit-banner');
+				expect(banner!._classes.has('lumen-view-hidden')).toBe(true);
+			});
+		});
+
+		describe('conversation API chat', () => {
+			it('uses ChatClient when available', async () => {
+				const sendMessageFn = vi.fn().mockResolvedValue({
+					content: 'Server response',
+					sources: [{ path: 'note.md', score: 0.9 }],
+					metadata: null,
+				});
+				const createConversationFn = vi.fn().mockResolvedValue({ id: 'conv-new' });
+
+				const mockChatClient = {
+					sendMessage: sendMessageFn,
+					createConversation: createConversationFn,
+					getWorkspacePlan: vi.fn().mockResolvedValue({ plan: null }),
+				};
+
+				const { view } = buildView({ chatClient: mockChatClient });
+				await view.onOpen();
+
+				(view as any).chatInput.value = 'Hello';
+				await (view as any).sendChatMessage();
+
+				expect(createConversationFn).toHaveBeenCalledOnce();
+				expect(sendMessageFn).toHaveBeenCalledWith(
+					'conv-new',
+					'Hello',
+					expect.objectContaining({ deepResearch: false }),
+				);
+			});
+
+			it('falls back to legacy ApiClient when ChatClient is null', async () => {
+				const chatFn = vi.fn().mockImplementation(
+					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
+						onToken('Legacy response');
+						return { content: 'Legacy response', sources: [] };
+					},
+				);
+
+				const { view } = buildView({ chatFn, chatClient: undefined });
+				await view.onOpen();
+
+				(view as any).chatInput.value = 'Hello';
+				await (view as any).sendChatMessage();
+
+				expect(chatFn).toHaveBeenCalled();
 			});
 		});
 	});
