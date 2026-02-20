@@ -83,16 +83,16 @@ describe('classifyError — validation errors', () => {
 		expect(result.statusCode).toBe(400);
 	});
 
-	it('classifies 404 as validation error', () => {
+	it('classifies 404 as config error', () => {
 		const result = classifyError(new Error('404 Not Found'));
-		expect(result.category).toBe('validation');
+		expect(result.category).toBe('config');
 		expect(result.retryable).toBe(false);
 		expect(result.statusCode).toBe(404);
 	});
 
-	it('classifies "Not Found" as validation error', () => {
+	it('classifies "Not Found" as config error', () => {
 		const result = classifyError(new Error('Endpoint Not Found'));
-		expect(result.category).toBe('validation');
+		expect(result.category).toBe('config');
 		expect(result.retryable).toBe(false);
 		expect(result.statusCode).toBe(404);
 	});
@@ -152,28 +152,28 @@ describe('classifyError — validation errors', () => {
 // ---------------------------------------------------------------------------
 
 describe('classifyError — rate limiting', () => {
-	it('classifies 429 as server/rate-limit error', () => {
+	it('classifies 429 as rate-limit error', () => {
 		const result = classifyError(new Error('429 Too Many Requests'));
-		expect(result.category).toBe('server');
+		expect(result.category).toBe('rate-limit');
 		expect(result.retryable).toBe(true);
 		expect(result.statusCode).toBe(429);
 	});
 
 	it('classifies "rate limit" message as rate-limit error', () => {
 		const result = classifyError(new Error('rate limit exceeded'));
-		expect(result.category).toBe('server');
+		expect(result.category).toBe('rate-limit');
 		expect(result.retryable).toBe(true);
 	});
 
 	it('classifies RATE_LIMIT as rate-limit error', () => {
 		const result = classifyError(new Error('RATE_LIMIT'));
-		expect(result.category).toBe('server');
+		expect(result.category).toBe('rate-limit');
 		expect(result.retryable).toBe(true);
 	});
 
 	it('classifies "Too Many" as rate-limit error', () => {
 		const result = classifyError(new Error('Too Many requests'));
-		expect(result.category).toBe('server');
+		expect(result.category).toBe('rate-limit');
 		expect(result.retryable).toBe(true);
 	});
 });
@@ -396,9 +396,9 @@ describe('classifyError — priority ordering', () => {
 		expect(result.category).toBe('auth');
 	});
 
-	it('validation (404) takes priority over network patterns in same message', () => {
+	it('config (404) takes priority over network patterns in same message', () => {
 		const result = classifyError(new Error('Not Found'));
-		expect(result.category).toBe('validation');
+		expect(result.category).toBe('config');
 	});
 });
 

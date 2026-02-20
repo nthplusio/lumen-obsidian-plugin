@@ -274,7 +274,7 @@ export class SyncClient extends LumenHttpClient {
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: this.jsonHeaders(),
+			headers: this.headers,
 			body: JSON.stringify(body),
 		});
 
@@ -311,7 +311,7 @@ export class SyncClient extends LumenHttpClient {
 		endpoint?: string,
 	): Promise<SyncDownloadResponse> {
 		const url = endpoint
-			? `${this.apiUrl}${endpoint}`
+			? `${this.baseUrl}${endpoint}`
 			: this.buildUrl('sync/download');
 
 		logger.debug('Downloading files:', { sessionId, pathCount: paths.length, endpoint: endpoint ?? '(default)' });
@@ -319,7 +319,7 @@ export class SyncClient extends LumenHttpClient {
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: this.jsonHeaders(),
+			headers: this.headers,
 			body: JSON.stringify({
 				sync_session_id: sessionId,
 				paths,
