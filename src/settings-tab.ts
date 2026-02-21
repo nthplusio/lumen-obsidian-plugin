@@ -195,12 +195,10 @@ export class LumenSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// Exclude patterns
+		// Exclude patterns (managed by server)
 		new Setting(content)
 			.setName('Exclude patterns')
-			.setDesc('File paths matching these patterns will not be synced');
-
-		this.renderExcludePatterns(content);
+			.setDesc('Exclude patterns are managed on the Lumen server. Visit your server dashboard to configure them.');
 
 		// Sync info
 		this.renderSyncInfo(content);
@@ -304,61 +302,6 @@ export class LumenSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-	}
-
-	// -----------------------------------------------------------------------
-	// Exclude Patterns Editor
-	// -----------------------------------------------------------------------
-
-	private renderExcludePatterns(containerEl: HTMLElement): void {
-		const listEl = containerEl.createEl('div', { cls: 'lumen-exclude-list' });
-
-		const renderList = (): void => {
-			listEl.empty();
-			const patterns = this.plugin.settings.excludePatterns;
-
-			for (let i = 0; i < patterns.length; i++) {
-				const row = listEl.createEl('div', { cls: 'lumen-exclude-row' });
-
-				const input = row.createEl('input', {
-					cls: 'lumen-exclude-input',
-					attr: { type: 'text', placeholder: 'e.g., templates/' },
-				});
-				input.value = patterns[i] ?? '';
-
-				input.addEventListener('change', async () => {
-					patterns[i] = input.value.trim();
-					await this.plugin.saveSettings();
-				});
-
-				const removeBtn = row.createEl('button', {
-					cls: 'lumen-exclude-remove-btn',
-					text: 'Remove',
-				});
-
-				removeBtn.addEventListener('click', async () => {
-					patterns.splice(i, 1);
-					await this.plugin.saveSettings();
-					renderList();
-				});
-			}
-
-			const addBtn = listEl.createEl('button', {
-				cls: 'lumen-exclude-add-btn',
-				text: '+ Add pattern',
-			});
-
-			addBtn.addEventListener('click', async () => {
-				patterns.push('');
-				await this.plugin.saveSettings();
-				renderList();
-				// Focus the newly added input
-				const inputs = listEl.querySelectorAll('.lumen-exclude-input');
-				(inputs[inputs.length - 1] as HTMLInputElement)?.focus();
-			});
-		};
-
-		renderList();
 	}
 
 	// -----------------------------------------------------------------------

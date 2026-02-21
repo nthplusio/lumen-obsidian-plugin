@@ -1,7 +1,7 @@
 /**
  * SyncClient — HTTP client for the Lumen server sync endpoints.
  *
- * Mirrors the McpClient pattern for consistency:
+ * Mirrors the ApiClient pattern for consistency:
  *   - Constructor accepts credentials; updateSettings() swaps them.
  *   - Uses Obsidian's `requestUrl` for JSON requests (proper CORS in Electron).
  *   - Uses native `fetch` for multipart FormData uploads (requestUrl
@@ -17,7 +17,6 @@
 import { requestUrl } from 'obsidian';
 import type {
 	FileManifestEntry,
-	SyncManifestResponse,
 	SyncManifestResponseV2,
 	SyncUploadResponse,
 	SyncDownloadResponse,
@@ -55,6 +54,7 @@ export class SyncClient extends LumenHttpClient {
 		deviceName: string,
 		pluginVersion: string,
 		vaultName: string,
+		platform: string = 'unknown',
 	): Promise<PluginRegistrationResponse> {
 		const url = this.buildUrl('sync/register');
 
@@ -69,6 +69,7 @@ export class SyncClient extends LumenHttpClient {
 				device_name: deviceName,
 				plugin_version: pluginVersion,
 				vault_name: vaultName,
+				platform,
 			}),
 		});
 
@@ -80,56 +81,6 @@ export class SyncClient extends LumenHttpClient {
 
 		logger.info('Plugin registered successfully');
 		return response.json as PluginRegistrationResponse;
-	}
-
-	// -----------------------------------------------------------------------
-	// POST /sync/manifest — Step 1: Hash exchange
-	// -----------------------------------------------------------------------
-
-	/**
-	 * Send the client file manifest to the server.
-	 *
-	 * The server compares hashes and returns which files it needs uploaded.
-	 * Note: sync_session_id is intentionally omitted — the server generates
-	 * it (M6 security mitigation, see spec section 4.2).
-	 */
-	async sendManifest(
-		files: FileManifestEntry[],
-		cursor?: string,
-	): Promise<SyncManifestResponse> {
-		const url = this.buildUrl('sync/manifest');
-
-		logger.debug('Sending manifest:', {
-			fileCount: files.length,
-			hasCursor: !!cursor,
-		});
-
-		const body: Record<string, unknown> = { files };
-		if (cursor) {
-			body.cursor = cursor;
-		}
-
-		const response = await requestUrl({
-			url,
-			method: 'POST',
-			headers: this.headers,
-			body: JSON.stringify(body),
-		});
-
-		if (response.status !== 200) {
-			throw new Error(
-				`Manifest exchange failed: ${response.status} ${this.extractErrorMessage(response)}`,
-			);
-		}
-
-		const result = response.json as SyncManifestResponse;
-		logger.info('Manifest response:', {
-			sessionId: result.sync_session_id,
-			neededFiles: result.needed_files.length,
-			deletedFiles: result.deleted_files.length,
-		});
-
-		return result;
 	}
 
 	// -----------------------------------------------------------------------
@@ -148,42 +99,56 @@ export class SyncClient extends LumenHttpClient {
 	 * Protocol: each file is a form part where the field name is the
 	 * vault-relative path and the value is the file content.
 	 *
-	 * @param sessionId — sync_session_id returned from sendManifest()
+	 * @param sessionId — sync_session_id returned from sendManifestV2()
 	 * @param files — Map of vault-relative path → file content (string)
 	 */
 	async uploadFiles(
 		sessionId: string,
-		files: Map<string, string>,
+		files: Map<string, string | ArrayBuffer>,
 	): Promise<SyncUploadResponse> {
 		const url = this.buildUrl('sync/upload');
 
 		logger.debug('Uploading files:', { sessionId, fileCount: files.size });
 
 		const boundary = `----LumenUpload${Date.now()}${Math.random().toString(36).slice(2)}`;
-		const parts: string[] = [];
+		const encoder = new TextEncoder();
+
+		// Build multipart body as byte arrays
+		const parts: Uint8Array[] = [];
 
 		// Session ID as a plain form field
-		parts.push(
-			`--${boundary}\r\n` +
-			`Content-Disposition: form-data; name="sync_session_id"\r\n\r\n` +
-			`${sessionId}\r\n`,
-		);
+		const sessionHeader = `--${boundary}\r\nContent-Disposition: form-data; name="sync_session_id"\r\n\r\n${sessionId}\r\n`;
+		parts.push(encoder.encode(sessionHeader));
 
 		// Each file as a file form field
 		for (const [path, content] of files) {
-			parts.push(
-				`--${boundary}\r\n` +
-				`Content-Disposition: form-data; name="${path}"; filename="${path}"\r\n` +
-				`Content-Type: text/markdown\r\n\r\n` +
-				`${content}\r\n`,
-			);
+			const isText = typeof content === 'string';
+			const mimeType = isText ? 'text/plain' : 'application/octet-stream';
+			// Sanitize path for Content-Disposition: replace " and \ with _ to prevent
+			// header injection, strip CRLF to prevent multipart boundary attacks.
+			const safePath = path.replace(/["\\]/g, '_').replace(/[\r\n]/g, '');
+			const header = `--${boundary}\r\nContent-Disposition: form-data; name="${safePath}"; filename="${safePath}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+			parts.push(encoder.encode(header));
+
+			if (isText) {
+				parts.push(encoder.encode(content));
+			} else {
+				parts.push(new Uint8Array(content));
+			}
+
+			parts.push(encoder.encode('\r\n'));
 		}
 
-		parts.push(`--${boundary}--\r\n`);
+		parts.push(encoder.encode(`--${boundary}--\r\n`));
 
-		const body = parts.join('');
-		const encoder = new TextEncoder();
-		const bodyBuffer = encoder.encode(body).buffer;
+		// Concatenate all parts into a single ArrayBuffer
+		const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+		const body = new Uint8Array(totalLength);
+		let offset = 0;
+		for (const part of parts) {
+			body.set(part, offset);
+			offset += part.length;
+		}
 
 		const response = await requestUrl({
 			url,
@@ -192,7 +157,7 @@ export class SyncClient extends LumenHttpClient {
 				'X-API-Key': this.apiKey,
 				'Content-Type': `multipart/form-data; boundary=${boundary}`,
 			},
-			body: bodyBuffer,
+			body: body.buffer,
 		});
 
 		if (response.status < 200 || response.status >= 300) {
@@ -235,16 +200,17 @@ export class SyncClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// V2 Methods (Two-Way Sync)
+	// POST /sync/manifest — Step 1: Hash exchange (V2 two-way sync)
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Send a V2 manifest with device ID and sync sequence for two-way sync.
+	 * Send the client file manifest with device ID and sync sequence.
 	 *
-	 * The server responds with `server_changes`, `server_deletions`, and
-	 * `conflicts` in addition to the V1 `needed_files` and `deleted_files`.
-	 * If the server doesn't support V2, it returns a V1 response (no
-	 * `server_changes` field) and the caller falls back gracefully.
+	 * The server compares hashes and returns:
+	 *   - `needed_files` — files the server needs uploaded
+	 *   - `server_changes` — files changed on the server since last sync
+	 *   - `server_deletions` — files deleted on the server
+	 *   - `conflicts` — files modified on both sides
 	 */
 	async sendManifestV2(
 		files: FileManifestEntry[],

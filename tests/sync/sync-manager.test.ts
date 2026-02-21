@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncManager } from '../../src/sync/sync-manager';
 import { DEFAULT_SETTINGS } from '../../src/types';
-import type { LumenSettings, FileManifestEntry, SyncManifestResponse, SyncManifestResponseV2 } from '../../src/types';
+import type { LumenSettings, FileManifestEntry, SyncManifestResponseV2 } from '../../src/types';
 
 // ---------------------------------------------------------------------------
 // Mock obsidian module
@@ -52,8 +52,6 @@ function createMockFileHasher() {
 		hashAllFiles: vi.fn().mockResolvedValue(hashMap),
 		hashFile: vi.fn().mockResolvedValue('a'.repeat(64)),
 		invalidateCache: vi.fn(),
-		clearCache: vi.fn(),
-		getCachedHash: vi.fn().mockReturnValue(null),
 		get cacheSize() { return 0; },
 	};
 }
@@ -77,13 +75,6 @@ function createDefaultV2Response(overrides: Partial<SyncManifestResponseV2> = {}
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
-		sendManifest: vi.fn().mockResolvedValue({
-			sync_session_id: 'session-001',
-			needed_files: [],
-			deleted_files: [],
-			new_cursor: 'cursor-new',
-			upload_endpoint: '/api/workspaces/ws-001/sync/upload',
-		} satisfies SyncManifestResponse),
 		sendManifestV2: vi.fn().mockResolvedValue(createDefaultV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
@@ -102,7 +93,6 @@ function createMockSyncClient() {
 function createMockConflictLogger() {
 	return {
 		logConflicts: vi.fn().mockResolvedValue(undefined),
-		getConflictLog: vi.fn().mockResolvedValue(null),
 	};
 }
 
@@ -403,8 +393,8 @@ describe('SyncManager', () => {
 			expect(result.success).toBe(true);
 			expect(result.filesUploaded).toBe(0);
 			expect(result.filesDeleted).toBe(0);
-			// sendManifestV2 should NOT be called (nothing to sync, no prior seq)
-			expect(syncClient.sendManifestV2).not.toHaveBeenCalled();
+			// Always sends manifest now — even empty manifests discover server changes
+			expect(syncClient.sendManifestV2).toHaveBeenCalled();
 		});
 
 		it('updates settings cursor after successful sync', async () => {

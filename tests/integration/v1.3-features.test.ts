@@ -14,7 +14,7 @@ import { SimilarNotesModal } from '../../src/similar-notes-modal';
 import { createLumenAPI } from '../../src/dataview-api';
 import { SyncManager } from '../../src/sync/sync-manager';
 import { DEFAULT_SETTINGS } from '../../src/types';
-import type { LumenSettings, FileManifestEntry, SyncManifestResponse } from '../../src/types';
+import type { LumenSettings, FileManifestEntry } from '../../src/types';
 
 // ---------------------------------------------------------------------------
 // Mock obsidian module
@@ -512,20 +512,11 @@ describe('Integration: Event-driven sync with idle detection', () => {
 			hashAllFiles: vi.fn().mockResolvedValue(new Map()),
 			hashFile: vi.fn().mockResolvedValue('a'.repeat(64)),
 			invalidateCache: vi.fn(),
-			clearCache: vi.fn(),
-			getCachedHash: vi.fn().mockReturnValue(null),
 			get cacheSize() { return 0; },
 		};
 
 		syncClient = {
 			register: vi.fn(),
-			sendManifest: vi.fn().mockResolvedValue({
-				sync_session_id: 'session-001',
-				needed_files: [],
-				deleted_files: [],
-				new_cursor: 'cursor-new',
-				upload_endpoint: '/upload',
-			}),
 			sendManifestV2: vi.fn().mockResolvedValue({
 				sync_session_id: 'session-001',
 				needed_files: [],
@@ -553,7 +544,6 @@ describe('Integration: Event-driven sync with idle detection', () => {
 
 		conflictLogger = {
 			logConflicts: vi.fn().mockResolvedValue(undefined),
-			getConflictLog: vi.fn().mockResolvedValue(null),
 		};
 
 		const vaultOn = vi.fn().mockReturnValue({});

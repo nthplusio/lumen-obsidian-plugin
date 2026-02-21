@@ -22,7 +22,6 @@ import { ConflictLogger } from '../../src/sync/conflict-logger';
 import { DEFAULT_SETTINGS } from '../../src/types';
 import type {
 	LumenSettings,
-	SyncManifestResponse,
 	SyncManifestResponseV2,
 	SyncUploadResponse,
 	SyncState,
@@ -99,9 +98,11 @@ function createMockVault(files: ReturnType<typeof createMockTFile>[] = []) {
 
 	return {
 		getMarkdownFiles: vi.fn().mockReturnValue(files),
+		getFiles: vi.fn().mockReturnValue(files),
 		read: vi.fn().mockImplementation(async (file: any) => {
 			return fileContents.get(file.path) ?? '';
 		}),
+		readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
 		getAbstractFileByPath: vi.fn().mockImplementation((path: string) => {
 			return files.find((f) => f.path === path) ?? null;
 		}),
@@ -152,13 +153,6 @@ function createDefaultV2Response(overrides: Partial<SyncManifestResponseV2> = {}
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
-		sendManifest: vi.fn().mockResolvedValue({
-			sync_session_id: 'session-001',
-			needed_files: [],
-			deleted_files: [],
-			new_cursor: 'cursor-new',
-			upload_endpoint: '/api/workspaces/ws-001/sync/upload',
-		} satisfies SyncManifestResponse),
 		sendManifestV2: vi.fn().mockResolvedValue(createDefaultV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
@@ -403,7 +397,8 @@ describe('Sync Flow Integration', () => {
 			expect(result.success).toBe(true);
 			expect(result.filesUploaded).toBe(0);
 			expect(result.filesDeleted).toBe(0);
-			expect(syncClient.sendManifestV2).not.toHaveBeenCalled();
+			// Always sends manifest now — even empty manifests discover server changes
+			expect(syncClient.sendManifestV2).toHaveBeenCalled();
 			expect(syncClient.uploadFiles).not.toHaveBeenCalled();
 		});
 
@@ -544,32 +539,25 @@ describe('Sync Flow Integration', () => {
 	// -----------------------------------------------------------------------
 
 	describe('conflict detection', () => {
-		it('logs conflicts when server deletes a locally-modified file', async () => {
+		it('logs conflicts when server reports both-modified files (V2 conflicts)', async () => {
 			const files = [
 				createMockTFile('notes/keep.md', 1000, 50),
 				createMockTFile('notes/conflicted.md', 2000, 75),
 			];
 			await buildStack(files);
 
-			// First, initialize to register vault event handlers
-			await manager.initialize();
-
-			// Simulate local modification — trigger the vault 'modify' event
-			const modifyCall = vault.on.mock.calls.find(
-				([name]: [string]) => name === 'modify',
-			);
-			expect(modifyCall).toBeDefined();
-			const modifyHandler = modifyCall![1];
-
-			// Fire modify event for conflicted.md
-			const conflictedFile = files.find((f) => f.path === 'notes/conflicted.md')!;
-			modifyHandler(conflictedFile);
-
-			// Server says it deleted conflicted.md
+			// Server reports a conflict — both sides modified the same file
 			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-conflict',
-				deleted_files: ['notes/conflicted.md'],
 				new_cursor: 'cursor-conflict',
+				conflicts: [
+					{
+						path: 'notes/conflicted.md',
+						server_hash: 'b'.repeat(64),
+						client_hash: 'a'.repeat(64),
+						server_seq: 5,
+					},
+				],
 			}));
 
 			const result = await manager.syncNow();
@@ -578,7 +566,7 @@ describe('Sync Flow Integration', () => {
 			expect(result.conflicts).toBeDefined();
 			expect(result.conflicts).toHaveLength(1);
 			expect(result.conflicts![0].path).toBe('notes/conflicted.md');
-			expect(result.conflicts![0].type).toBe('server-modified');
+			expect(result.conflicts![0].type).toBe('both-modified');
 			expect(result.conflicts![0].resolution).toBe('server-kept');
 		});
 	});

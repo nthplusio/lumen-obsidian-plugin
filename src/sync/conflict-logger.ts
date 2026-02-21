@@ -64,19 +64,6 @@ export class ConflictLogger {
 	}
 
 	/**
-	 * Read the full conflict log, or null if it doesn't exist.
-	 */
-	async getConflictLog(): Promise<string | null> {
-		try {
-			const file = this.vault.getAbstractFileByPath(CONFLICT_LOG_PATH);
-			if (!file) return null;
-			return await this.vault.adapter.read(CONFLICT_LOG_PATH);
-		} catch {
-			return null;
-		}
-	}
-
-	/**
 	 * Format a set of conflicts into a markdown section.
 	 *
 	 * SEC-3 fix: all server-controlled strings are escaped or validated

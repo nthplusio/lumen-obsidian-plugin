@@ -12,7 +12,7 @@ import { SyncManager } from '../../src/sync/sync-manager';
 import { DEFAULT_SETTINGS } from '../../src/types';
 import type {
 	LumenSettings,
-	SyncManifestResponse,
+	SyncManifestResponseV2,
 	SyncUploadResponse,
 	FileManifestEntry,
 } from '../../src/types';
@@ -97,13 +97,18 @@ function createMockApiClient() {
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
-		sendManifest: vi.fn().mockResolvedValue({
+		sendManifestV2: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
 			needed_files: [],
 			deleted_files: [],
 			new_cursor: 'cursor-new',
 			upload_endpoint: '/api/workspaces/ws-001/sync/upload',
-		} satisfies SyncManifestResponse),
+			current_seq: 1,
+			server_changes: [],
+			server_deletions: [],
+			conflicts: [],
+			download_endpoint: '/api/workspaces/ws-001/sync/download',
+		} satisfies SyncManifestResponseV2),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-001',
 			accepted: 0,
@@ -112,6 +117,7 @@ function createMockSyncClient() {
 			indexing_triggered: false,
 			rejected_files: [],
 		} satisfies SyncUploadResponse),
+		downloadFiles: vi.fn().mockResolvedValue({ files: [] }),
 		getSyncStatus: vi.fn(),
 		updateSettings: vi.fn(),
 	};
@@ -123,8 +129,6 @@ function createMockFileHasher() {
 		hashAllFiles: vi.fn().mockResolvedValue(hashMap),
 		hashFile: vi.fn().mockResolvedValue('a'.repeat(64)),
 		invalidateCache: vi.fn(),
-		clearCache: vi.fn(),
-		getCachedHash: vi.fn().mockReturnValue(null),
 		get cacheSize() { return 0; },
 		_hashMap: hashMap,
 	};
@@ -133,7 +137,6 @@ function createMockFileHasher() {
 function createMockConflictLogger() {
 	return {
 		logConflicts: vi.fn().mockResolvedValue(undefined),
-		getConflictLog: vi.fn().mockResolvedValue(null),
 	};
 }
 
@@ -157,6 +160,7 @@ function createMockVault() {
 function createMockPlugin(vault: ReturnType<typeof createMockVault>) {
 	return {
 		registerEvent: vi.fn(),
+		saveData: vi.fn().mockResolvedValue(undefined),
 		app: {
 			vault,
 			workspace: {},
@@ -390,7 +394,7 @@ describe('v1.3 Feature Integration', () => {
 			expect(fileHasher.hashAllFiles).toHaveBeenCalledOnce();
 		});
 
-		it('excludes non-markdown files from sync events', async () => {
+		it('excludes files matching exclude patterns from sync events', async () => {
 			await manager.initialize();
 
 			const modifyCall = vault.on.mock.calls.find(
@@ -398,12 +402,12 @@ describe('v1.3 Feature Integration', () => {
 			);
 			const modifyHandler = modifyCall![1];
 
-			// Create a non-markdown file
-			const imageFile = { ...createMockTFile('images/photo.png'), extension: 'png' };
-			await setTFilePrototype(imageFile);
-			modifyHandler(imageFile);
+			// Create a file in an excluded path (.obsidian/)
+			const excludedFile = { ...createMockTFile('.obsidian/workspace.json'), extension: 'json' };
+			await setTFilePrototype(excludedFile);
+			modifyHandler(excludedFile);
 
-			// Wait past debounce — no sync should trigger (TFile check filters .md only)
+			// Wait past debounce — no sync should trigger (excluded by pattern)
 			await vi.advanceTimersByTimeAsync(65_000);
 			expect(fileHasher.hashAllFiles).not.toHaveBeenCalled();
 		});

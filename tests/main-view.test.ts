@@ -232,8 +232,6 @@ function buildView(opts: {
 		},
 		apiClient: {
 			semanticSearch: searchFn,
-			chatStream: chatFn,
-			clearChatHistory: vi.fn().mockResolvedValue(undefined),
 			testConnection: testConnectionFn,
 			listTags: listTagsFn,
 		},
@@ -1715,14 +1713,25 @@ describe('LumenMainView', () => {
 		});
 
 		describe('sending messages', () => {
+			/** Helper: create a mock ChatClient for chat tests */
+			function createMockChatClient(overrides: {
+				sendMessageFn?: ReturnType<typeof vi.fn>;
+			} = {}) {
+				const sendMessageFn = overrides.sendMessageFn ?? vi.fn().mockResolvedValue({
+					content: 'Chat response',
+					sources: [],
+					metadata: null,
+				});
+				return {
+					sendMessage: sendMessageFn,
+					createConversation: vi.fn().mockResolvedValue({ id: 'conv-test' }),
+					getWorkspacePlan: vi.fn().mockResolvedValue({ plan: null }),
+				};
+			}
+
 			it('sends message on Enter key', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('Stub response');
-						return { content: 'Stub response', sources: [] };
-					},
-				);
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				const chatInput = (view as any).chatInput as MockElement;
@@ -1731,17 +1740,16 @@ describe('LumenMainView', () => {
 
 				await flushMicrotasks();
 
-				expect(chatFn).toHaveBeenCalledWith('Hello vault', expect.any(Array), expect.any(Function));
+				expect(mockChatClient.sendMessage).toHaveBeenCalledWith(
+					'conv-test',
+					'Hello vault',
+					expect.objectContaining({ deepResearch: false }),
+				);
 			});
 
 			it('does not send on Shift+Enter', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('x');
-						return { content: 'x', sources: [] };
-					},
-				);
-				const { view } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				const chatInput = (view as any).chatInput as MockElement;
@@ -1750,17 +1758,12 @@ describe('LumenMainView', () => {
 
 				await flushMicrotasks();
 
-				expect(chatFn).not.toHaveBeenCalled();
+				expect(mockChatClient.sendMessage).not.toHaveBeenCalled();
 			});
 
 			it('does not send empty message', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('x');
-						return { content: 'x', sources: [] };
-					},
-				);
-				const { view } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				const chatInput = (view as any).chatInput as MockElement;
@@ -1769,17 +1772,12 @@ describe('LumenMainView', () => {
 
 				await flushMicrotasks();
 
-				expect(chatFn).not.toHaveBeenCalled();
+				expect(mockChatClient.sendMessage).not.toHaveBeenCalled();
 			});
 
 			it('adds user and assistant messages after send', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('Chat functionality is coming soon.');
-						return { content: 'Chat functionality is coming soon.', sources: [] };
-					},
-				);
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view, contentEl } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				// Send a message directly
@@ -1797,13 +1795,8 @@ describe('LumenMainView', () => {
 			});
 
 			it('hides empty state after first message', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('x');
-						return { content: 'x', sources: [] };
-					},
-				);
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view, contentEl } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				(view as any).chatInput.value = 'Test';
@@ -1814,13 +1807,8 @@ describe('LumenMainView', () => {
 			});
 
 			it('clears input after send', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('x');
-						return { content: 'x', sources: [] };
-					},
-				);
-				const { view } = buildView({ chatFn });
+				const mockChatClient = createMockChatClient();
+				const { view } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				const chatInput = (view as any).chatInput as MockElement;
@@ -1833,8 +1821,12 @@ describe('LumenMainView', () => {
 
 		describe('error handling', () => {
 			it('shows error message on chat failure', async () => {
-				const chatFn = vi.fn().mockRejectedValue(new Error('Network error')) as any;
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = {
+					sendMessage: vi.fn().mockRejectedValue(new Error('Network error')),
+					createConversation: vi.fn().mockResolvedValue({ id: 'conv-err' }),
+					getWorkspacePlan: vi.fn().mockResolvedValue({ plan: null }),
+				};
+				const { view, contentEl } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				(view as any).chatInput.value = 'Test';
@@ -1847,13 +1839,16 @@ describe('LumenMainView', () => {
 
 		describe('suggested prompts', () => {
 			it('fills input and sends when suggestion is clicked', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('x');
-						return { content: 'x', sources: [] };
-					},
-				);
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = {
+					sendMessage: vi.fn().mockResolvedValue({
+						content: 'Response',
+						sources: [],
+						metadata: null,
+					}),
+					createConversation: vi.fn().mockResolvedValue({ id: 'conv-suggest' }),
+					getWorkspacePlan: vi.fn().mockResolvedValue({ plan: null }),
+				};
+				const { view, contentEl } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				const suggestions = findByClass(contentEl, 'lumen-chat-suggestion');
@@ -1866,19 +1861,22 @@ describe('LumenMainView', () => {
 				await flushMicrotasks();
 				await flushMicrotasks();
 
-				expect(chatFn).toHaveBeenCalled();
+				expect(mockChatClient.sendMessage).toHaveBeenCalled();
 			});
 		});
 
 		describe('sources', () => {
 			it('renders source chips for assistant messages with sources', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('Here is what I found.');
-						return { content: 'Here is what I found.', sources: ['notes/project.md', 'notes/meeting.md'] };
-					},
-				);
-				const { view, contentEl } = buildView({ chatFn });
+				const mockChatClient = {
+					sendMessage: vi.fn().mockResolvedValue({
+						content: 'Here is what I found.',
+						sources: [{ path: 'notes/project.md', score: 0.9 }, { path: 'notes/meeting.md', score: 0.8 }],
+						metadata: null,
+					}),
+					createConversation: vi.fn().mockResolvedValue({ id: 'conv-sources' }),
+					getWorkspacePlan: vi.fn().mockResolvedValue({ plan: null }),
+				};
+				const { view, contentEl } = buildView({ chatClient: mockChatClient });
 				await view.onOpen();
 
 				(view as any).chatInput.value = 'Test';
@@ -2050,21 +2048,16 @@ describe('LumenMainView', () => {
 				);
 			});
 
-			it('falls back to legacy ApiClient when ChatClient is null', async () => {
-				const chatFn = vi.fn().mockImplementation(
-					async (_msg: string, _hist: unknown[], onToken: (t: string) => void) => {
-						onToken('Legacy response');
-						return { content: 'Legacy response', sources: [] };
-					},
-				);
-
-				const { view } = buildView({ chatFn, chatClient: undefined });
+			it('shows error when ChatClient is null', async () => {
+				const { view, contentEl } = buildView({ chatClient: undefined });
 				await view.onOpen();
 
 				(view as any).chatInput.value = 'Hello';
 				await (view as any).sendChatMessage();
 
-				expect(chatFn).toHaveBeenCalled();
+				// Should show error instead of sending message
+				const errorEls = findByClass(contentEl, 'lumen-chat-message-error');
+				expect(errorEls.length).toBeGreaterThan(0);
 			});
 		});
 	});

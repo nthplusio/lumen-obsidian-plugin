@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncClient } from '../../src/sync/sync-client';
 import type {
 	PluginRegistrationResponse,
-	SyncManifestResponse,
 	SyncManifestResponseV2,
 	SyncUploadResponse,
 	SyncDownloadResponse,
@@ -91,14 +90,6 @@ const registrationResponse: PluginRegistrationResponse = {
 	sync_manifest_endpoint: `/api/workspaces/${WORKSPACE_ID}/sync/manifest`,
 	max_file_size_bytes: 50 * 1024 * 1024,
 	allowed_extensions: ['.md', '.pdf'],
-};
-
-const manifestResponse: SyncManifestResponse = {
-	sync_session_id: '00000000-0000-4000-8000-000000000100',
-	needed_files: ['notes/daily.md', 'notes/project.md'],
-	deleted_files: [],
-	new_cursor: 'cursor_abc123',
-	upload_endpoint: `/api/workspaces/${WORKSPACE_ID}/sync/upload`,
 };
 
 const uploadResponse: SyncUploadResponse = {
@@ -221,70 +212,6 @@ describe('SyncClient', () => {
 			await expect(
 				client.register('d', 'n', '1.0.0', 'v'),
 			).rejects.toThrow(/Registration failed.*404/);
-		});
-	});
-
-	// -----------------------------------------------------------------------
-	// sendManifest
-	// -----------------------------------------------------------------------
-
-	describe('sendManifest', () => {
-		it('sends files array and cursor, returns needed_files', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponse);
-
-			const files = [
-				{
-					path: 'notes/daily.md',
-					content_hash: 'a'.repeat(64),
-					modified_at: '2026-02-13T10:00:00.000Z',
-					size_bytes: 1024,
-					action: 'add' as const,
-				},
-			];
-
-			const result = await client.sendManifest(files, 'prev_cursor');
-
-			expect(result.sync_session_id).toBeDefined();
-			expect(result.needed_files).toEqual(['notes/daily.md', 'notes/project.md']);
-			expect(result.new_cursor).toBe('cursor_abc123');
-			expect(result.upload_endpoint).toContain('/sync/upload');
-
-			// Verify request body
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
-
-			const body = JSON.parse(call.body);
-			expect(body.files).toHaveLength(1);
-			expect(body.cursor).toBe('prev_cursor');
-		});
-
-		it('omits cursor when not provided', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponse);
-
-			await client.sendManifest([]);
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const body = JSON.parse(call.body);
-			expect(body.cursor).toBeUndefined();
-		});
-
-		it('includes X-API-Key header', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponse);
-
-			await client.sendManifest([]);
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
-		});
-
-		it('throws on non-200 status', async () => {
-			const client = createClient();
-			mockRequestUrlFailure(400, 'Validation error');
-
-			await expect(client.sendManifest([])).rejects.toThrow(/Manifest exchange failed.*400/);
 		});
 	});
 
@@ -438,7 +365,7 @@ describe('SyncClient', () => {
 			const client = createClient();
 			mockRequestUrlFailure(401, 'Unauthorized');
 
-			await expect(client.sendManifest([])).rejects.toThrow('401');
+			await expect(client.sendManifestV2([], 'device-001', 0)).rejects.toThrow('401');
 		});
 
 		it('includes status code in error for server errors', async () => {
@@ -720,9 +647,9 @@ describe('SyncClient', () => {
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/register`,
 			);
 
-			// Manifest
-			mockRequestUrlSuccess(200, manifestResponse);
-			await client.sendManifest([]);
+			// Manifest (V2)
+			mockRequestUrlSuccess(200, manifestResponseV2);
+			await client.sendManifestV2([], 'device-001', 0);
 			expect((mockRequestUrl.mock.calls[1]![0] as any).url).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`,
 			);

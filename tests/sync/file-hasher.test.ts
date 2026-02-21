@@ -17,7 +17,9 @@ import { DEFAULT_SETTINGS } from '../../src/types';
 function createMockVault() {
 	return {
 		read: vi.fn().mockResolvedValue('# Hello World\n\nContent here.'),
+		readBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
 		getMarkdownFiles: vi.fn().mockReturnValue([]),
+		getFiles: vi.fn().mockReturnValue([]),
 		getAbstractFileByPath: vi.fn(),
 		adapter: { read: vi.fn(), write: vi.fn(), exists: vi.fn() },
 		on: vi.fn(),
@@ -173,35 +175,6 @@ describe('FileHasher', () => {
 			expect(vault.read).toHaveBeenCalledTimes(2);
 		});
 
-		it('clearCache empties entire cache', async () => {
-			vault.read.mockResolvedValue('content');
-
-			const files = [
-				createMockFile('a.md', 1000),
-				createMockFile('b.md', 2000),
-				createMockFile('c.md', 3000),
-			];
-
-			for (const file of files) {
-				await hasher.hashFile(file as any);
-			}
-			expect(hasher.cacheSize).toBe(3);
-
-			hasher.clearCache();
-			expect(hasher.cacheSize).toBe(0);
-		});
-
-		it('getCachedHash returns cached hash or null', async () => {
-			vault.read.mockResolvedValue('content');
-			const file = createMockFile('notes/test.md', 1000);
-
-			expect(hasher.getCachedHash('notes/test.md')).toBeNull();
-
-			await hasher.hashFile(file as any);
-			const cached = hasher.getCachedHash('notes/test.md');
-			expect(cached).toHaveLength(64);
-			expect(cached).toMatch(/^[0-9a-f]{64}$/);
-		});
 	});
 
 	// -----------------------------------------------------------------------
@@ -215,7 +188,7 @@ describe('FileHasher', () => {
 				createMockFile('notes/b.md', 2000, 75),
 				createMockFile('daily/today.md', 3000, 100),
 			];
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 			vault.read.mockResolvedValue('content');
 
 			const result = await hasher.hashAllFiles();
@@ -235,7 +208,7 @@ describe('FileHasher', () => {
 		});
 
 		it('handles empty vault (no files)', async () => {
-			vault.getMarkdownFiles.mockReturnValue([]);
+			vault.getFiles.mockReturnValue([]);
 
 			const result = await hasher.hashAllFiles();
 
@@ -256,7 +229,7 @@ describe('FileHasher', () => {
 				createMockFile('templates/daily.md'),
 				createMockFile('notes/also-keep.md'),
 			];
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 			vault.read.mockResolvedValue('content');
 
 			const result = await hasher.hashAllFiles();
@@ -281,7 +254,7 @@ describe('FileHasher', () => {
 				createMockFile('drafts/AB.md'),     // matches drafts/??.md
 				createMockFile('drafts/ABC.md'),    // doesn't match (3 chars, not 2)
 			];
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 			vault.read.mockResolvedValue('content');
 
 			const result = await hasher.hashAllFiles();
@@ -296,7 +269,7 @@ describe('FileHasher', () => {
 			const files = Array.from({ length: 120 }, (_, i) =>
 				createMockFile(`notes/file-${i}.md`, i * 1000, 50),
 			);
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 			vault.read.mockResolvedValue('content');
 
 			const progressCalls: Array<[number, number]> = [];
@@ -315,7 +288,7 @@ describe('FileHasher', () => {
 			const files = Array.from({ length: 75 }, (_, i) =>
 				createMockFile(`notes/file-${i}.md`, i * 1000, 50),
 			);
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 			vault.read.mockResolvedValue('content');
 
 			const result = await hasher.hashAllFiles();
@@ -331,7 +304,7 @@ describe('FileHasher', () => {
 				createMockFile('notes/bad.md', 2000),
 				createMockFile('notes/also-good.md', 3000),
 			];
-			vault.getMarkdownFiles.mockReturnValue(files);
+			vault.getFiles.mockReturnValue(files);
 
 			vault.read
 				.mockResolvedValueOnce('good content')

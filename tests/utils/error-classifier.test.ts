@@ -9,11 +9,10 @@
  *   - Timeout errors: ETIMEDOUT, timeout, AbortError
  *   - Network errors: ENOTFOUND, ECONNREFUSED, ECONNRESET, Failed to fetch
  *   - Non-Error inputs: strings, objects, null, undefined
- *   - isRetryableStatus() helper
  */
 
 import { describe, it, expect } from 'vitest';
-import { classifyError, isRetryableStatus } from '../../src/utils/error-classifier';
+import { classifyError } from '../../src/utils/error-classifier';
 import type { ClassifiedError } from '../../src/utils/error-classifier';
 
 // ---------------------------------------------------------------------------
@@ -402,44 +401,3 @@ describe('classifyError — priority ordering', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// isRetryableStatus()
-// ---------------------------------------------------------------------------
-
-describe('isRetryableStatus', () => {
-	it('returns true for 429', () => {
-		expect(isRetryableStatus(429)).toBe(true);
-	});
-
-	it('returns true for 502', () => {
-		expect(isRetryableStatus(502)).toBe(true);
-	});
-
-	it('returns true for 503', () => {
-		expect(isRetryableStatus(503)).toBe(true);
-	});
-
-	it('returns true for 504', () => {
-		expect(isRetryableStatus(504)).toBe(true);
-	});
-
-	it('returns false for 500 (not in the retryable set)', () => {
-		expect(isRetryableStatus(500)).toBe(false);
-	});
-
-	it('returns false for 400', () => {
-		expect(isRetryableStatus(400)).toBe(false);
-	});
-
-	it('returns false for 401', () => {
-		expect(isRetryableStatus(401)).toBe(false);
-	});
-
-	it('returns false for 200', () => {
-		expect(isRetryableStatus(200)).toBe(false);
-	});
-
-	it('returns false for 404', () => {
-		expect(isRetryableStatus(404)).toBe(false);
-	});
-});

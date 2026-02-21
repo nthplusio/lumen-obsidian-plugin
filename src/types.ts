@@ -87,15 +87,6 @@ export interface FileManifestEntry {
 	action: 'add' | 'modify' | 'delete';
 }
 
-/** Server response to a manifest exchange */
-export interface SyncManifestResponse {
-	sync_session_id: string;
-	needed_files: string[];
-	deleted_files: string[];
-	new_cursor: string;
-	upload_endpoint: string;
-}
-
 /** Server response to a file upload */
 export interface SyncUploadResponse {
 	sync_session_id: string;
@@ -117,6 +108,7 @@ export interface PluginRegistrationResponse {
 	sync_manifest_endpoint: string;
 	max_file_size_bytes: number;
 	allowed_extensions: string[];
+	exclude_patterns: string[];
 }
 
 /** Server response to sync status query */
@@ -130,6 +122,8 @@ export interface SyncStatusResponse {
 		indexed_files: number;
 		total_files: number;
 	};
+	exclude_patterns: string[];
+	max_file_size_bytes: number;
 }
 
 // ============================================================================
@@ -152,8 +146,13 @@ export interface ConflictInfo {
 	server_seq: number;
 }
 
-/** V2 manifest response with server changes and conflict info. */
-export interface SyncManifestResponseV2 extends SyncManifestResponse {
+/** Server response to a manifest exchange. */
+export interface SyncManifestResponseV2 {
+	sync_session_id: string;
+	needed_files: string[];
+	deleted_files: string[];
+	new_cursor: string;
+	upload_endpoint: string;
 	current_seq: number;
 	server_changes: ServerChange[];
 	server_deletions: string[];

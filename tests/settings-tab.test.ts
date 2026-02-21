@@ -495,67 +495,10 @@ describe('LumenSettingTab', () => {
 	// -------------------------------------------------------------------
 
 	describe('exclude patterns', () => {
-		it('creates exclude patterns setting', () => {
+		it('creates exclude patterns setting with server-managed description', () => {
 			const s = findSetting('Exclude patterns');
 			expect(s).toBeDefined();
-		});
-
-		it('renders existing patterns as inputs', () => {
-			// Find the exclude list div
-			const contents = findSectionContents(containerEl);
-			const syncContent = contents[1]; // Vault Sync section
-			const listEl = syncContent.children.find(
-				(c: any) => c.className?.includes('lumen-exclude-list'),
-			);
-			expect(listEl).toBeDefined();
-			// 2 patterns + 1 add button = at least 3 children
-			// Each pattern is a row div, plus the add button
-			expect(listEl.children.length).toBeGreaterThanOrEqual(3);
-		});
-
-		it('add button adds new pattern and saves', async () => {
-			const contents = findSectionContents(containerEl);
-			const syncContent = contents[1];
-			const listEl = syncContent.children.find(
-				(c: any) => c.className?.includes('lumen-exclude-list'),
-			);
-
-			// Find add button
-			const addBtn = listEl.children.find(
-				(c: any) => c.className?.includes('lumen-exclude-add-btn'),
-			);
-			expect(addBtn).toBeDefined();
-
-			const initialLength = mockPlugin.settings.excludePatterns.length;
-			await addBtn._trigger('click');
-
-			expect(mockPlugin.settings.excludePatterns.length).toBe(initialLength + 1);
-			expect(mockPlugin.saveSettings).toHaveBeenCalled();
-		});
-
-		it('remove button removes pattern and saves', async () => {
-			const contents = findSectionContents(containerEl);
-			const syncContent = contents[1];
-			const listEl = syncContent.children.find(
-				(c: any) => c.className?.includes('lumen-exclude-list'),
-			);
-
-			// Find first remove button
-			const rows = listEl.children.filter(
-				(c: any) => c.className?.includes('lumen-exclude-row'),
-			);
-			expect(rows.length).toBe(2); // .obsidian/ and .trash/
-
-			const removeBtn = rows[0].children.find(
-				(c: any) => c.className?.includes('lumen-exclude-remove-btn'),
-			);
-			expect(removeBtn).toBeDefined();
-
-			await removeBtn._trigger('click');
-
-			expect(mockPlugin.settings.excludePatterns).toHaveLength(1);
-			expect(mockPlugin.settings.excludePatterns[0]).toBe('.trash/');
-			expect(mockPlugin.saveSettings).toHaveBeenCalled();
+			expect(s._desc).toContain('managed on the Lumen server');
 		});
 	});
 

@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncManager } from '../../src/sync/sync-manager';
+import { FileHasher } from '../../src/sync/file-hasher';
 import { DEFAULT_SETTINGS } from '../../src/types';
 import type {
 	LumenSettings,
@@ -84,8 +85,6 @@ function createMockFileHasher() {
 		hashAllFiles: vi.fn().mockResolvedValue(singleFileHashMap()),
 		hashFile: vi.fn().mockResolvedValue('a'.repeat(64)),
 		invalidateCache: vi.fn(),
-		clearCache: vi.fn(),
-		getCachedHash: vi.fn().mockReturnValue(null),
 		get cacheSize() { return 0; },
 	};
 }
@@ -93,7 +92,6 @@ function createMockFileHasher() {
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
-		sendManifest: vi.fn(),
 		sendManifestV2: vi.fn().mockResolvedValue(createV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-hsc',
@@ -109,7 +107,6 @@ function createMockSyncClient() {
 function createMockConflictLogger() {
 	return {
 		logConflicts: vi.fn().mockResolvedValue(undefined),
-		getConflictLog: vi.fn().mockResolvedValue(null),
 	};
 }
 
@@ -176,6 +173,10 @@ describe('handleServerChanges (via syncNow)', () => {
 			clearInterval: globalThis.clearInterval.bind(globalThis),
 		});
 
+		// Mock FileHasher static methods so hash verification passes with fake hashes
+		vi.spyOn(FileHasher, 'computeSHA256').mockImplementation(async () => '__mock_hash__');
+		vi.spyOn(FileHasher, 'computeSHA256Binary').mockImplementation(async () => '__mock_hash__');
+
 		settings = createSettings();
 		fileHasher = createMockFileHasher();
 		syncClient = createMockSyncClient();
@@ -205,14 +206,14 @@ describe('handleServerChanges (via syncNow)', () => {
 			const content = '# New File from Server\n\nHello world';
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/new-file.md', content_hash: 'x'.repeat(64), size_bytes: content.length, seq: 8 },
+					{ path: 'notes/new-file.md', content_hash: '__mock_hash__', size_bytes: content.length, seq: 8 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [{
 					path: 'notes/new-file.md',
 					content_base64: btoa(content),
-					content_hash: 'x'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: content.length,
 				}],
 			});
@@ -238,14 +239,14 @@ describe('handleServerChanges (via syncNow)', () => {
 
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/existing.md', content_hash: 'y'.repeat(64), size_bytes: content.length, seq: 9 },
+					{ path: 'notes/existing.md', content_hash: '__mock_hash__', size_bytes: content.length, seq: 9 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [{
 					path: 'notes/existing.md',
 					content_base64: btoa(content),
-					content_hash: 'y'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: content.length,
 				}],
 			});
@@ -256,17 +257,42 @@ describe('handleServerChanges (via syncNow)', () => {
 			expect(result.filesDownloaded).toBe(1);
 		});
 
+		it('uses binary hash path for text files (non-ASCII safe)', async () => {
+			const content = '# Café ☕ — 日本語テスト';
+			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
+				server_changes: [
+					{ path: 'notes/unicode.md', content_hash: '__mock_hash__', size_bytes: content.length, seq: 8 },
+				],
+			}));
+			syncClient.downloadFiles.mockResolvedValue({
+				files: [{
+					path: 'notes/unicode.md',
+					content_base64: btoa(unescape(encodeURIComponent(content))),
+					content_hash: '__mock_hash__',
+					size_bytes: content.length,
+				}],
+			});
+
+			plugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
+
+			const result = await manager.syncNow();
+
+			// Text files now hash via computeSHA256Binary (byte-level), not computeSHA256 (string)
+			expect(FileHasher.computeSHA256Binary).toHaveBeenCalled();
+			expect(result.filesDownloaded).toBe(1);
+		});
+
 		it('invalidates file hasher cache after writing', async () => {
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/cached.md', content_hash: 'z'.repeat(64), size_bytes: 10, seq: 7 },
+					{ path: 'notes/cached.md', content_hash: '__mock_hash__', size_bytes: 10, seq: 7 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [{
 					path: 'notes/cached.md',
 					content_base64: btoa('content'),
-					content_hash: 'z'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: 10,
 				}],
 			});
@@ -286,14 +312,14 @@ describe('handleServerChanges (via syncNow)', () => {
 			const content = '# Deep File';
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'a/b/c/deep.md', content_hash: 'd'.repeat(64), size_bytes: 10, seq: 6 },
+					{ path: 'a/b/c/deep.md', content_hash: '__mock_hash__', size_bytes: 10, seq: 6 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [{
 					path: 'a/b/c/deep.md',
 					content_base64: btoa(content),
-					content_hash: 'd'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: 10,
 				}],
 			});
@@ -330,7 +356,7 @@ describe('handleServerChanges (via syncNow)', () => {
 				files: paths.map(p => ({
 					path: p,
 					content_base64: btoa('content'),
-					content_hash: 'h'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: 7,
 				})),
 			}));
@@ -572,14 +598,14 @@ describe('handleServerChanges (via syncNow)', () => {
 		it('allows safe paths while rejecting unsafe ones in same batch', async () => {
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/safe.md', content_hash: 's'.repeat(64), size_bytes: 10, seq: 1 },
-					{ path: '../escape.md', content_hash: 'e'.repeat(64), size_bytes: 10, seq: 2 },
+					{ path: 'notes/safe.md', content_hash: '__mock_hash__', size_bytes: 10, seq: 1 },
+					{ path: '../escape.md', content_hash: '__mock_hash__', size_bytes: 10, seq: 2 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [
-					{ path: 'notes/safe.md', content_base64: btoa('safe'), content_hash: 's'.repeat(64), size_bytes: 4 },
-					{ path: '../escape.md', content_base64: btoa('evil'), content_hash: 'e'.repeat(64), size_bytes: 4 },
+					{ path: 'notes/safe.md', content_base64: btoa('safe'), content_hash: '__mock_hash__', size_bytes: 4 },
+					{ path: '../escape.md', content_base64: btoa('evil'), content_hash: '__mock_hash__', size_bytes: 4 },
 				],
 			});
 			plugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
@@ -605,14 +631,14 @@ describe('handleServerChanges (via syncNow)', () => {
 
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/fail-write.md', content_hash: 'f'.repeat(64), size_bytes: 10, seq: 1 },
+					{ path: 'notes/fail-write.md', content_hash: '__mock_hash__', size_bytes: 10, seq: 1 },
 				],
 			}));
 			syncClient.downloadFiles.mockResolvedValue({
 				files: [{
 					path: 'notes/fail-write.md',
 					content_base64: btoa('content'),
-					content_hash: 'f'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: 10,
 				}],
 			});
@@ -658,7 +684,7 @@ describe('handleServerChanges (via syncNow)', () => {
 					files: Array.from({ length: 10 }, (_, i) => ({
 						path: `notes/file-${50 + i}.md`,
 						content_base64: btoa('ok'),
-						content_hash: 'h'.repeat(64),
+						content_hash: '__mock_hash__',
 						size_bytes: 2,
 					})),
 				});
@@ -671,6 +697,65 @@ describe('handleServerChanges (via syncNow)', () => {
 			expect(syncClient.downloadFiles).toHaveBeenCalledTimes(2);
 			expect(result.filesDownloaded).toBe(10);
 			expect(result.errors.some(e => e.includes('Download batch failed'))).toBe(true);
+		});
+
+		it('shows Notice on hash mismatch', async () => {
+			const { Notice } = await import('obsidian');
+
+			// Return a hash that doesn't match the mock
+			vi.spyOn(FileHasher, 'computeSHA256Binary').mockResolvedValueOnce('wrong_hash');
+
+			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
+				server_changes: [
+					{ path: 'notes/mismatch.md', content_hash: 'expected_hash', size_bytes: 10, seq: 1 },
+				],
+			}));
+			syncClient.downloadFiles.mockResolvedValue({
+				files: [{
+					path: 'notes/mismatch.md',
+					content_base64: btoa('content'),
+					content_hash: 'expected_hash',
+					size_bytes: 10,
+				}],
+			});
+
+			const result = await manager.syncNow();
+
+			expect(result.filesDownloaded).toBe(0);
+			expect(result.errors.some(e => e.includes('Hash mismatch'))).toBe(true);
+			expect(Notice).toHaveBeenCalledWith(
+				expect.stringContaining('hash mismatch'),
+				5000,
+			);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// Null guard on V2 response fields
+	// -----------------------------------------------------------------------
+
+	describe('null-guard on V2 response fields', () => {
+		it('handles missing server_changes gracefully', async () => {
+			const response = createV2Response();
+			// Simulate server omitting server_changes
+			(response as any).server_changes = undefined;
+			syncClient.sendManifestV2.mockResolvedValue(response);
+
+			const result = await manager.syncNow();
+
+			expect(result.success).toBe(true);
+			expect(result.filesDownloaded).toBe(0);
+		});
+
+		it('handles missing server_deletions gracefully', async () => {
+			const response = createV2Response();
+			// Simulate server omitting server_deletions
+			(response as any).server_deletions = undefined;
+			syncClient.sendManifestV2.mockResolvedValue(response);
+
+			const result = await manager.syncNow();
+
+			expect(result.success).toBe(true);
 		});
 	});
 });

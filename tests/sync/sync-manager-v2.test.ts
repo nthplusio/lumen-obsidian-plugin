@@ -3,7 +3,6 @@
  *
  * Tests V2-specific sync paths through the public syncNow() API:
  *   - Full V2 flow: manifest → download → upload → conflict log
- *   - V1 fallback when server returns non-V2 response
  *   - lastSyncSeq update after successful V2 sync
  *   - BUG-2: settings persistence after every sync (not just manual)
  *   - BUG-1: local content read BEFORE handleServerChanges overwrites
@@ -11,11 +10,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncManager } from '../../src/sync/sync-manager';
+import { FileHasher } from '../../src/sync/file-hasher';
 import { DEFAULT_SETTINGS } from '../../src/types';
 import type {
 	LumenSettings,
 	FileManifestEntry,
-	SyncManifestResponse,
 	SyncManifestResponseV2,
 } from '../../src/types';
 
@@ -55,8 +54,6 @@ function createMockFileHasher(hashMap?: Map<string, FileManifestEntry>) {
 		hashAllFiles: vi.fn().mockResolvedValue(hashMap ?? new Map()),
 		hashFile: vi.fn().mockResolvedValue('a'.repeat(64)),
 		invalidateCache: vi.fn(),
-		clearCache: vi.fn(),
-		getCachedHash: vi.fn().mockReturnValue(null),
 		get cacheSize() { return 0; },
 	};
 }
@@ -77,21 +74,9 @@ function createV2Response(overrides: Partial<SyncManifestResponseV2> = {}): Sync
 	};
 }
 
-function createV1Response(overrides: Partial<SyncManifestResponse> = {}): SyncManifestResponse {
-	return {
-		sync_session_id: 'session-v1',
-		needed_files: [],
-		deleted_files: [],
-		new_cursor: 'cursor-v1',
-		upload_endpoint: '/api/workspaces/ws-001/sync/upload',
-		...overrides,
-	};
-}
-
 function createMockSyncClient() {
 	return {
 		register: vi.fn(),
-		sendManifest: vi.fn().mockResolvedValue(createV1Response()),
 		sendManifestV2: vi.fn().mockResolvedValue(createV2Response()),
 		uploadFiles: vi.fn().mockResolvedValue({
 			sync_session_id: 'session-v2',
@@ -110,7 +95,6 @@ function createMockSyncClient() {
 function createMockConflictLogger() {
 	return {
 		logConflicts: vi.fn().mockResolvedValue(undefined),
-		getConflictLog: vi.fn().mockResolvedValue(null),
 	};
 }
 
@@ -191,6 +175,10 @@ describe('SyncManager V2 integration', () => {
 			clearInterval: globalThis.clearInterval.bind(globalThis),
 		});
 
+		// Mock FileHasher static methods so hash verification passes with fake hashes
+		vi.spyOn(FileHasher, 'computeSHA256').mockImplementation(async () => '__mock_hash__');
+		vi.spyOn(FileHasher, 'computeSHA256Binary').mockImplementation(async () => '__mock_hash__');
+
 		settings = createSettings();
 		fileHasher = createMockFileHasher(singleFileHashMap());
 		syncClient = createMockSyncClient();
@@ -233,7 +221,7 @@ describe('SyncManager V2 integration', () => {
 		it('downloads server changes when V2 response includes them', async () => {
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/from-server.md', content_hash: 'b'.repeat(64), size_bytes: 200, seq: 9 },
+					{ path: 'notes/from-server.md', content_hash: '__mock_hash__', size_bytes: 200, seq: 9 },
 				],
 			}));
 
@@ -241,7 +229,7 @@ describe('SyncManager V2 integration', () => {
 				files: [{
 					path: 'notes/from-server.md',
 					content_base64: btoa('# From Server'),
-					content_hash: 'b'.repeat(64),
+					content_hash: '__mock_hash__',
 					size_bytes: 200,
 				}],
 			});
@@ -285,39 +273,6 @@ describe('SyncManager V2 integration', () => {
 
 			expect(plugin.app.vault.delete).not.toHaveBeenCalled();
 			expect(result.success).toBe(true);
-		});
-	});
-
-	// -----------------------------------------------------------------------
-	// V1 fallback
-	// -----------------------------------------------------------------------
-
-	describe('V1 fallback', () => {
-		it('falls back gracefully when server returns V1 response (no server_changes)', async () => {
-			// sendManifestV2 returns a V1-shaped response (no server_changes field)
-			syncClient.sendManifestV2.mockResolvedValue(createV1Response({
-				sync_session_id: 'session-v1-fallback',
-				new_cursor: 'v1-cursor',
-			}));
-
-			const result = await manager.syncNow();
-
-			expect(result.success).toBe(true);
-			// Should NOT attempt downloads (no server_changes)
-			expect(syncClient.downloadFiles).not.toHaveBeenCalled();
-			// Cursor should still be updated
-			expect(settings.lastSyncCursor).toBe('v1-cursor');
-		});
-
-		it('does not update lastSyncSeq on V1 response', async () => {
-			settings.lastSyncSeq = 5;
-
-			syncClient.sendManifestV2.mockResolvedValue(createV1Response());
-
-			await manager.syncNow();
-
-			// lastSyncSeq should remain unchanged (V1 has no current_seq)
-			expect(settings.lastSyncSeq).toBe(5);
 		});
 	});
 
@@ -419,7 +374,7 @@ describe('SyncManager V2 integration', () => {
 					files: [{
 						path: 'notes/conflict.md',
 						content_base64: btoa('server content'),
-						content_hash: 'b'.repeat(64),
+						content_hash: '__mock_hash__',
 						size_bytes: 100,
 					}],
 				};
@@ -427,10 +382,10 @@ describe('SyncManager V2 integration', () => {
 
 			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
 				server_changes: [
-					{ path: 'notes/conflict.md', content_hash: 'b'.repeat(64), size_bytes: 100, seq: 9 },
+					{ path: 'notes/conflict.md', content_hash: '__mock_hash__', size_bytes: 100, seq: 9 },
 				],
 				conflicts: [
-					{ path: 'notes/conflict.md', server_hash: 'b'.repeat(64), client_hash: 'a'.repeat(64), server_seq: 9 },
+					{ path: 'notes/conflict.md', server_hash: '__mock_hash__', client_hash: 'a'.repeat(64), server_seq: 9 },
 				],
 			}));
 

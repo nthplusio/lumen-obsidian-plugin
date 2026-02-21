@@ -297,35 +297,6 @@ describe('ConflictLogger', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// getConflictLog
-	// -----------------------------------------------------------------------
-
-	describe('getConflictLog', () => {
-		it('returns null when file does not exist', async () => {
-			vault.getAbstractFileByPath.mockReturnValue(null);
-
-			const result = await logger.getConflictLog();
-			expect(result).toBeNull();
-		});
-
-		it('returns file content when log exists', async () => {
-			vault.getAbstractFileByPath.mockReturnValue({ path: '.lumen-conflicts.md' });
-			vault.adapter.read.mockResolvedValue('# Conflict Log\n\nSome conflicts...');
-
-			const result = await logger.getConflictLog();
-			expect(result).toBe('# Conflict Log\n\nSome conflicts...');
-		});
-
-		it('returns null on read error', async () => {
-			vault.getAbstractFileByPath.mockReturnValue({ path: '.lumen-conflicts.md' });
-			vault.adapter.read.mockRejectedValue(new Error('Read failed'));
-
-			const result = await logger.getConflictLog();
-			expect(result).toBeNull();
-		});
-	});
-
-	// -----------------------------------------------------------------------
 	// Error handling
 	// -----------------------------------------------------------------------
 

@@ -85,6 +85,14 @@ export function classifyError(err: unknown): ClassifiedError {
 			statusCode: 413,
 		};
 	}
+	if (msg.includes('MANIFEST_TOO_LARGE') || msg.includes('10,000') || msg.includes('10000')) {
+		return {
+			category: 'validation',
+			message: 'Too many files for sync. Add exclude patterns on the Lumen server to reduce the count.',
+			retryable: false,
+			statusCode: 400,
+		};
+	}
 	if (msg.includes('422') || msg.includes('HASH_MISMATCH')) {
 		return {
 			category: 'validation',
@@ -145,11 +153,4 @@ export function classifyError(err: unknown): ClassifiedError {
 		message: msg,
 		retryable: false,
 	};
-}
-
-/**
- * Check whether an HTTP status code indicates a retryable error.
- */
-export function isRetryableStatus(status: number): boolean {
-	return status === 429 || status === 502 || status === 503 || status === 504;
 }

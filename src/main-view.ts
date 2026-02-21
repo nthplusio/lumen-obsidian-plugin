@@ -611,9 +611,8 @@ export class LumenMainView extends ItemView {
 
 		const chatClient = this.plugin.chatClient;
 
-		// Fall back to legacy ApiClient if ChatClient not available
 		if (!chatClient) {
-			await this.sendChatMessageLegacy(message);
+			this.showChatError('Chat is not configured. Check your Lumen settings.');
 			return;
 		}
 
@@ -752,85 +751,6 @@ export class LumenMainView extends ItemView {
 			// Restore send/stop button state
 			this.chatSendButton?.removeClass('lumen-view-hidden');
 			this.chatStopButton?.addClass('lumen-view-hidden');
-		}
-	}
-
-	/** Legacy send path using ApiClient.chatStream (for when ChatClient is not configured) */
-	private async sendChatMessageLegacy(message: string): Promise<void> {
-		// Hide empty state on first message
-		this.chatEmptyState?.addClass('lumen-view-hidden');
-
-		const history = this.chatMessages.map(m => ({ role: m.role, content: m.content }));
-
-		this.addChatMessage({ role: 'user', content: message });
-
-		if (this.chatInput) {
-			this.chatInput.value = '';
-			this.chatInput.style.height = 'auto';
-		}
-
-		const { bubble, contentEl, loadingEl } = this.createAssistantBubble();
-
-		this.isChatSending = true;
-		let firstToken = true;
-		let streamedContent = '';
-		let rafPending = false;
-
-		try {
-			const response = await this.plugin.apiClient.chatStream(
-				message,
-				history,
-				(token) => {
-					if (firstToken) {
-						loadingEl.remove();
-						firstToken = false;
-					}
-					streamedContent += token;
-					if (!rafPending && typeof requestAnimationFrame === 'function') {
-						rafPending = true;
-						requestAnimationFrame(() => {
-							rafPending = false;
-							contentEl.textContent = streamedContent;
-							if (this.chatMessagesContainer) {
-								this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
-							}
-						});
-					} else if (!rafPending) {
-						contentEl.textContent = streamedContent;
-					}
-				},
-			);
-
-			if (firstToken) loadingEl.remove();
-
-			contentEl.empty();
-			await MarkdownRenderer.render(this.app, response.content, contentEl, '', this);
-
-			if (response.sources.length > 0) {
-				this.renderChatSources(bubble, response.sources);
-			}
-
-			this.chatMessages.push({
-				role: 'assistant',
-				content: response.content,
-				sources: response.sources,
-			});
-
-			if (this.chatMessagesContainer) {
-				this.chatMessagesContainer.scrollTop = this.chatMessagesContainer.scrollHeight;
-			}
-		} catch (err) {
-			if (firstToken) loadingEl.remove();
-			bubble.remove();
-
-			const errMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-			if (errMsg.includes('subscription') || errMsg.includes('Upgrade')) {
-				this.showChatUpgradePrompt(errMsg);
-			} else {
-				this.showChatError(errMsg);
-			}
-		} finally {
-			this.isChatSending = false;
 		}
 	}
 

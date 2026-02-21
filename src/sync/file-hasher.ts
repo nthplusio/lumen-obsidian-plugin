@@ -11,6 +11,7 @@ import { Notice, Platform, TFile, Vault } from 'obsidian';
 import type { FileManifestEntry, LumenSettings } from '../types';
 import { logger } from '../utils/logger';
 import { isExcludedByPatterns } from '../utils/exclude-pattern';
+import { TEXT_EXTENSIONS } from './constants';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -20,10 +21,6 @@ interface CachedHash {
 	hash: string;
 	mtime: number; // file.stat.mtime at time of hashing
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Files processed per chunk before yielding to the UI thread. */
 const CHUNK_SIZE = 50;
@@ -42,10 +39,16 @@ export class FileHasher {
 	private vault: Vault;
 	private settings: LumenSettings;
 	private hashCache: Map<string, CachedHash> = new Map();
+	/** Server-provided exclude patterns. Falls back to settings.excludePatterns. */
+	excludePatterns: string[];
+	/** Server-provided max file size in bytes. Defaults to 50MB. */
+	maxFileSize: number;
 
 	constructor(vault: Vault, settings: LumenSettings) {
 		this.vault = vault;
 		this.settings = settings;
+		this.excludePatterns = settings.excludePatterns;
+		this.maxFileSize = 50 * 1024 * 1024; // 50MB default
 	}
 
 	/**
@@ -65,8 +68,8 @@ export class FileHasher {
 		onProgress?: (current: number, total: number) => void,
 	): Promise<Map<string, FileManifestEntry>> {
 		const files = this.vault
-			.getMarkdownFiles()
-			.filter((f) => !this.isExcluded(f.path));
+			.getFiles()
+			.filter((f) => !this.isExcluded(f.path) && f.stat.size <= this.maxFileSize);
 
 		// Warn on mobile for large vaults — hashing is CPU-intensive
 		if (Platform.isMobile && files.length > MOBILE_LARGE_VAULT_THRESHOLD) {
@@ -80,7 +83,7 @@ export class FileHasher {
 
 		const result = new Map<string, FileManifestEntry>();
 
-		logger.debug(`Hashing ${files.length} markdown files (chunk: ${CHUNK_SIZE})`);
+		logger.debug(`Hashing ${files.length} files (chunk: ${CHUNK_SIZE})`);
 
 		for (let i = 0; i < files.length; i += CHUNK_SIZE) {
 			const chunk = files.slice(i, i + CHUNK_SIZE);
@@ -127,8 +130,14 @@ export class FileHasher {
 			return cached.hash;
 		}
 
-		const content = await this.vault.read(file);
-		const hash = await this.computeSHA256(content);
+		let hash: string;
+		if (TEXT_EXTENSIONS.has(file.extension)) {
+			const content = await this.vault.read(file);
+			hash = await FileHasher.computeSHA256(content);
+		} else {
+			const buffer = await this.vault.readBinary(file);
+			hash = await FileHasher.computeSHA256Binary(new Uint8Array(buffer));
+		}
 
 		this.hashCache.set(file.path, { hash, mtime: file.stat.mtime });
 		return hash;
@@ -142,20 +151,6 @@ export class FileHasher {
 		this.hashCache.delete(path);
 	}
 
-	/** Clear the entire hash cache. */
-	clearCache(): void {
-		this.hashCache.clear();
-		logger.debug('Hash cache cleared');
-	}
-
-	/**
-	 * Return the cached hash for a path, or null if not cached / stale.
-	 * Does NOT recompute — purely reads the cache.
-	 */
-	getCachedHash(path: string): string | null {
-		return this.hashCache.get(path)?.hash ?? null;
-	}
-
 	/** Number of entries currently in the cache. */
 	get cacheSize(): number {
 		return this.hashCache.size;
@@ -166,12 +161,19 @@ export class FileHasher {
 	// -----------------------------------------------------------------------
 
 	private isExcluded(path: string): boolean {
-		return isExcludedByPatterns(path, this.settings.excludePatterns);
+		return isExcludedByPatterns(path, this.excludePatterns);
 	}
 
 	/** Compute SHA-256 hash of a string using Web Crypto API. */
-	private async computeSHA256(content: string): Promise<string> {
+	static async computeSHA256(content: string): Promise<string> {
 		const data = new TextEncoder().encode(content);
+		const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+		const hashArray = new Uint8Array(hashBuffer);
+		return Array.from(hashArray, (b) => b.toString(16).padStart(2, '0')).join('');
+	}
+
+	/** Compute SHA-256 hash of binary data using Web Crypto API. */
+	static async computeSHA256Binary(data: Uint8Array): Promise<string> {
 		const hashBuffer = await crypto.subtle.digest('SHA-256', data);
 		const hashArray = new Uint8Array(hashBuffer);
 		return Array.from(hashArray, (b) => b.toString(16).padStart(2, '0')).join('');

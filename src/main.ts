@@ -294,6 +294,16 @@ export default class LumenPlugin extends Plugin {
 
 		logger.info('Sync initialized');
 
+		// Auto-sync on first connect to pull existing workspace files
+		if (!this.settings.lastSyncAt && this.settings.lastSyncSeq === 0) {
+			setTimeout(() => {
+				if (this.syncManager) {
+					logger.info('First connect — triggering initial sync to pull workspace files');
+					this.syncManager.syncNow();
+				}
+			}, 2000);
+		}
+
 		// Check if the server is currently indexing (e.g. from a previous sync)
 		this.syncClient.getSyncStatus().then(status => {
 			if (status.indexing_status.active) this.pollIndexingStatus();
