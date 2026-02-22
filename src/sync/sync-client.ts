@@ -101,10 +101,14 @@ export class SyncClient extends LumenHttpClient {
 	 *
 	 * @param sessionId — sync_session_id returned from sendManifestV2()
 	 * @param files — Map of vault-relative path → file content (string)
+	 * @param batchIndex — zero-based index of this batch within the upload
+	 * @param isLastBatch — true if this is the final batch in the upload
 	 */
 	async uploadFiles(
 		sessionId: string,
 		files: Map<string, string | ArrayBuffer>,
+		batchIndex: number = 0,
+		isLastBatch: boolean = true,
 	): Promise<SyncUploadResponse> {
 		const url = this.buildUrl('sync/upload');
 
@@ -119,6 +123,13 @@ export class SyncClient extends LumenHttpClient {
 		// Session ID as a plain form field
 		const sessionHeader = `--${boundary}\r\nContent-Disposition: form-data; name="sync_session_id"\r\n\r\n${sessionId}\r\n`;
 		parts.push(encoder.encode(sessionHeader));
+
+		// Batch metadata fields
+		const batchIndexHeader = `--${boundary}\r\nContent-Disposition: form-data; name="batch_index"\r\n\r\n${batchIndex}\r\n`;
+		parts.push(encoder.encode(batchIndexHeader));
+
+		const isLastBatchHeader = `--${boundary}\r\nContent-Disposition: form-data; name="is_last_batch"\r\n\r\n${isLastBatch ? 'true' : 'false'}\r\n`;
+		parts.push(encoder.encode(isLastBatchHeader));
 
 		// Each file as a file form field
 		for (const [path, content] of files) {

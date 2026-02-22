@@ -57,6 +57,7 @@ export interface SyncResult {
 	errors: string[];
 	duration: number;
 	conflicts?: ConflictEntry[];
+	batchCount?: number;
 }
 
 /** Entry describing a single conflict detected during sync */
@@ -73,6 +74,22 @@ export type SyncProgressCallback = (
 	state: SyncState,
 	progress?: { current: number; total: number; message?: string },
 ) => void;
+
+export interface HashingProgress {
+	kind: 'hashing';
+	current: number;
+	total: number;
+}
+
+export interface UploadProgress {
+	kind: 'uploading';
+	filesCompleted: number;
+	filesTotal: number;
+	batchIndex: number;
+	totalBatches: number;
+	currentBatchSize: number;
+	etaSeconds: number | null;
+}
 
 // ============================================================================
 // Sync API Types (mirrors @lumen/shared/storage.ts)
@@ -98,6 +115,7 @@ export interface SyncUploadResponse {
 		path: string;
 		reason: string;
 	}>;
+	batch_index?: number;
 }
 
 /** Server response to plugin registration */

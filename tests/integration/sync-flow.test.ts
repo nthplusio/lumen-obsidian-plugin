@@ -225,7 +225,7 @@ describe('Sync Flow Integration', () => {
 	 * + real ConflictLogger, with mocked SyncClient and Vault.
 	 *
 	 * Sets TFile prototype on all files so they pass `instanceof TFile`
-	 * checks in SyncManager (vault events and readFileContents).
+	 * checks in SyncManager (vault events and readFileBatch).
 	 */
 	async function buildStack(
 		files: ReturnType<typeof createMockTFile>[] = [],

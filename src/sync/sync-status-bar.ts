@@ -137,9 +137,11 @@ export class SyncStatusBar {
 			case 'manifest':
 				return 'Preparing sync...';
 			case 'uploading':
-				return progress
-					? `Uploading ${progress.total} file(s)...`
-					: 'Uploading...';
+				return progress?.message
+					? progress.message
+					: progress
+						? `Uploading ${progress.total} file(s)...`
+						: 'Uploading...';
 			case 'downloading':
 				return progress
 					? `Downloading... ${progress.current}/${progress.total}`

@@ -18,6 +18,7 @@ import type {
 	SyncState,
 	SyncResult,
 	SyncProgressCallback,
+	SyncUploadResponse,
 	FileManifestEntry,
 	ConflictEntry,
 	SyncManifestResponseV2,
@@ -30,7 +31,7 @@ import { classifyError } from '../utils/error-classifier';
 import { logger } from '../utils/logger';
 import { isExcludedByPatterns } from '../utils/exclude-pattern';
 import { isSafePath } from '../utils/path-safety';
-import { TEXT_EXTENSIONS } from './constants';
+import { TEXT_EXTENSIONS, UPLOAD_BATCH_SIZE, BATCH_MAX_RETRIES, BATCH_RETRY_BASE_MS, NOTICE_DURATION_ERROR_MS } from './constants';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,6 +74,9 @@ export class SyncManager {
 	private debounceTimer: number | null = null;
 	private autoSyncTimer: number | null = null;
 	private successTimer: number | null = null;
+
+	// Batch upload timing for ETA calculation
+	private batchDurations: number[] = [];
 
 	// Cached sync config from server
 	private currentExcludePatterns: string[] = ['.obsidian/', '.trash/'];
@@ -307,38 +311,50 @@ export class SyncManager {
 				`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
 			);
 
-			// ---- Phase 3: Upload requested files ----
+			// ---- Phase 3: Upload requested files (batched) ----
 			let filesUploaded = 0;
 			const errors: string[] = [];
 
 			if (manifestResponse.needed_files.length > 0) {
 				this.setState('uploading');
+				const allPaths = manifestResponse.needed_files;
+				const totalBatches = Math.ceil(allPaths.length / UPLOAD_BATCH_SIZE);
+				this.batchDurations = [];
 
-				const fileContents = await this.readFileContents(
-					manifestResponse.needed_files,
-				);
+				for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+					const batchStart = batchIdx * UPLOAD_BATCH_SIZE;
+					const batchPaths = allPaths.slice(batchStart, batchStart + UPLOAD_BATCH_SIZE);
+					const isLastBatch = batchIdx === totalBatches - 1;
 
-				logger.info(`Uploading ${fileContents.size} file(s)...`);
-				this.reportProgress(
-					'uploading',
-					0,
-					fileContents.size,
-					'Uploading files...',
-				);
+					const batchStartTime = Date.now();
 
-				const uploadResponse = await this.syncClient.uploadFiles(
-					manifestResponse.sync_session_id,
-					fileContents,
-				);
+					const uploadResponse = await this.uploadBatchWithRetry(
+						manifestResponse.sync_session_id,
+						batchPaths,
+						batchIdx,
+						isLastBatch,
+					);
 
-				filesUploaded = uploadResponse.accepted;
-				logger.info(`Upload complete: ${filesUploaded} accepted`);
+					const batchMs = Date.now() - batchStartTime;
+					this.batchDurations.push(batchMs);
+					if (this.batchDurations.length > 5) this.batchDurations.shift();
 
-				if (uploadResponse.rejected_files.length > 0) {
-					for (const rf of uploadResponse.rejected_files) {
-						errors.push(`${rf.path}: ${rf.reason}`);
-						logger.warn(`Rejected: ${rf.path} — ${rf.reason}`);
+					filesUploaded += uploadResponse.accepted;
+
+					if (uploadResponse.rejected_files?.length) {
+						for (const rf of uploadResponse.rejected_files) {
+							errors.push(`${rf.path}: ${rf.reason}`);
+						}
 					}
+
+					// Report progress with ETA
+					const avgBatchMs = this.batchDurations.reduce((a, b) => a + b, 0) / this.batchDurations.length;
+					const remainingBatches = totalBatches - (batchIdx + 1);
+					const etaSeconds = remainingBatches > 0 ? Math.ceil((avgBatchMs * remainingBatches) / 1000) : null;
+
+					this.reportProgress('uploading', filesUploaded, allPaths.length,
+						`Uploading ${filesUploaded}/${allPaths.length} (batch ${batchIdx + 1}/${totalBatches})${etaSeconds !== null ? ` ~${etaSeconds}s` : ''}`
+					);
 				}
 			}
 
@@ -440,9 +456,10 @@ export class SyncManager {
 			this.setState('error');
 			logger.error('Sync failed:', classified.message);
 
-			if (manual) {
-				new Notice(`Sync failed: ${classified.message}`);
-			}
+			new Notice(
+				`Lumen sync failed: ${classified.message}. ${Platform.isMobile ? 'Tap' : 'Click'} the status bar to retry.`,
+				NOTICE_DURATION_ERROR_MS,
+			);
 
 			const result: SyncResult = {
 				success: false,
@@ -810,10 +827,10 @@ export class SyncManager {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Read vault file contents for the paths the server requested.
+	 * Read vault file contents for a batch of paths.
 	 * Returns Map<path, content> for SyncClient.uploadFiles().
 	 */
-	private async readFileContents(
+	private async readFileBatch(
 		paths: string[],
 	): Promise<Map<string, string | ArrayBuffer>> {
 		const contents = new Map<string, string | ArrayBuffer>();
@@ -823,11 +840,9 @@ export class SyncManager {
 				const file = this.plugin.app.vault.getAbstractFileByPath(path);
 				if (file instanceof TFile) {
 					if (TEXT_EXTENSIONS.has(file.extension)) {
-						const content = await this.plugin.app.vault.read(file);
-						contents.set(path, content);
+						contents.set(path, await this.plugin.app.vault.read(file));
 					} else {
-						const content = await this.plugin.app.vault.readBinary(file);
-						contents.set(path, content);
+						contents.set(path, await this.plugin.app.vault.readBinary(file));
 					}
 				} else {
 					logger.warn(`File not found for upload: ${path}`);
@@ -838,6 +853,32 @@ export class SyncManager {
 		}
 
 		return contents;
+	}
+
+	/**
+	 * Upload a single batch with retry logic.
+	 * Retries transient errors with exponential backoff up to BATCH_MAX_RETRIES.
+	 */
+	private async uploadBatchWithRetry(
+		sessionId: string,
+		batchPaths: string[],
+		batchIndex: number,
+		isLastBatch: boolean,
+		retryCount = 0,
+	): Promise<SyncUploadResponse> {
+		try {
+			const batchContents = await this.readFileBatch(batchPaths);
+			return await this.syncClient.uploadFiles(sessionId, batchContents, batchIndex, isLastBatch);
+		} catch (error) {
+			const classified = classifyError(error);
+			if (classified.retryable && retryCount < BATCH_MAX_RETRIES) {
+				const delayMs = BATCH_RETRY_BASE_MS * Math.pow(2, retryCount);
+				logger.warn(`Batch ${batchIndex} failed (attempt ${retryCount + 1}/${BATCH_MAX_RETRIES}), retrying in ${delayMs}ms`);
+				await new Promise(resolve => setTimeout(resolve, delayMs));
+				return this.uploadBatchWithRetry(sessionId, batchPaths, batchIndex, isLastBatch, retryCount + 1);
+			}
+			throw error;
+		}
 	}
 
 	// -----------------------------------------------------------------------

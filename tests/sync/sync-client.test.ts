@@ -308,6 +308,38 @@ describe('SyncClient', () => {
 			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/upload`);
 			expect(call.method).toBe('POST');
 		});
+
+		it('includes batch_index and is_last_batch fields in multipart body', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, uploadResponse);
+
+			const files = new Map([
+				['notes/test.md', '# Test'],
+			]);
+
+			await client.uploadFiles('session-123', files, 2, false);
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const bodyText = new TextDecoder().decode(call.body);
+			expect(bodyText).toContain('name="batch_index"');
+			expect(bodyText).toContain('\r\n\r\n2\r\n');
+			expect(bodyText).toContain('name="is_last_batch"');
+			expect(bodyText).toContain('\r\n\r\nfalse\r\n');
+		});
+
+		it('defaults batchIndex=0 and isLastBatch=true when not provided', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(200, uploadResponse);
+
+			await client.uploadFiles('session-123', new Map());
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const bodyText = new TextDecoder().decode(call.body);
+			expect(bodyText).toContain('name="batch_index"');
+			expect(bodyText).toContain('\r\n\r\n0\r\n');
+			expect(bodyText).toContain('name="is_last_batch"');
+			expect(bodyText).toContain('\r\n\r\ntrue\r\n');
+		});
 	});
 
 	// -----------------------------------------------------------------------

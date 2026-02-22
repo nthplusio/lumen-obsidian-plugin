@@ -461,6 +461,45 @@ describe('SyncManager V2 integration', () => {
 	});
 
 	// -----------------------------------------------------------------------
+	// Batched upload via V2 flow
+	// -----------------------------------------------------------------------
+
+	describe('batched upload', () => {
+		it('passes batchIndex and isLastBatch to uploadFiles', async () => {
+			const hashMap = singleFileHashMap('notes/test.md');
+			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
+
+			const mockFile = createMockTFile('notes/test.md');
+			await asTFile(mockFile);
+			plugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+			syncClient.sendManifestV2.mockResolvedValue(createV2Response({
+				sync_session_id: 'batch-v2',
+				needed_files: ['notes/test.md'],
+			}));
+
+			syncClient.uploadFiles.mockResolvedValue({
+				sync_session_id: 'batch-v2',
+				accepted: 1,
+				rejected: 0,
+				deduplicated: 0,
+				indexing_triggered: true,
+				rejected_files: [],
+			});
+
+			const result = await manager.syncNow();
+
+			expect(result.success).toBe(true);
+			expect(syncClient.uploadFiles).toHaveBeenCalledOnce();
+			// Single file = 1 batch: batchIndex=0, isLastBatch=true
+			const call = syncClient.uploadFiles.mock.calls[0]!;
+			expect(call[0]).toBe('batch-v2'); // sessionId
+			expect(call[2]).toBe(0); // batchIndex
+			expect(call[3]).toBe(true); // isLastBatch
+		});
+	});
+
+	// -----------------------------------------------------------------------
 	// Sends empty manifest for server-only changes
 	// -----------------------------------------------------------------------
 

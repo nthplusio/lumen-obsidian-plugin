@@ -442,6 +442,111 @@ describe('SyncManager', () => {
 	});
 
 	// -----------------------------------------------------------------------
+	// Batch upload
+	// -----------------------------------------------------------------------
+
+	describe('batch upload', () => {
+		it('splits large uploads into multiple batches of 25', async () => {
+			// Generate 60 files that the server "needs"
+			const neededFiles: string[] = [];
+			const hashMap = new Map<string, FileManifestEntry>();
+			for (let i = 0; i < 60; i++) {
+				const path = `notes/file-${i}.md`;
+				neededFiles.push(path);
+				hashMap.set(path, {
+					path,
+					content_hash: 'a'.repeat(64),
+					modified_at: new Date().toISOString(),
+					size_bytes: 50,
+					action: 'add',
+				});
+			}
+			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
+
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
+				sync_session_id: 'batch-session',
+				needed_files: neededFiles,
+			}));
+
+			// Mock getAbstractFileByPath to return a TFile-like object for any path
+			mockPlugin.plugin.app.vault.getAbstractFileByPath.mockReturnValue(
+				createMockTFile('notes/file-0.md'),
+			);
+
+			// Each batch upload returns accepted = number of files in batch
+			syncClient.uploadFiles.mockImplementation(async (_sid: string, files: Map<string, string | ArrayBuffer>) => ({
+				sync_session_id: 'batch-session',
+				accepted: files.size,
+				rejected: 0,
+				deduplicated: 0,
+				indexing_triggered: false,
+				rejected_files: [],
+			}));
+
+			const result = await manager.syncNow();
+
+			expect(result.success).toBe(true);
+			// 60 files / 25 per batch = 3 batches
+			expect(syncClient.uploadFiles).toHaveBeenCalledTimes(3);
+
+			// Verify batch indices and isLastBatch flags
+			const calls = syncClient.uploadFiles.mock.calls;
+			// First batch: batchIndex=0, isLastBatch=false
+			expect(calls[0]![2]).toBe(0);
+			expect(calls[0]![3]).toBe(false);
+			// Second batch: batchIndex=1, isLastBatch=false
+			expect(calls[1]![2]).toBe(1);
+			expect(calls[1]![3]).toBe(false);
+			// Third batch: batchIndex=2, isLastBatch=true
+			expect(calls[2]![2]).toBe(2);
+			expect(calls[2]![3]).toBe(true);
+		});
+
+		it('sends single batch for <= 25 files with isLastBatch=true', async () => {
+			const neededFiles: string[] = [];
+			const hashMap = new Map<string, FileManifestEntry>();
+			for (let i = 0; i < 10; i++) {
+				const path = `notes/file-${i}.md`;
+				neededFiles.push(path);
+				hashMap.set(path, {
+					path,
+					content_hash: 'a'.repeat(64),
+					modified_at: new Date().toISOString(),
+					size_bytes: 50,
+					action: 'add',
+				});
+			}
+			fileHasher.hashAllFiles.mockResolvedValue(hashMap);
+
+			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
+				sync_session_id: 'single-batch',
+				needed_files: neededFiles,
+			}));
+
+			mockPlugin.plugin.app.vault.getAbstractFileByPath.mockReturnValue(
+				createMockTFile('notes/file-0.md'),
+			);
+
+			syncClient.uploadFiles.mockResolvedValue({
+				sync_session_id: 'single-batch',
+				accepted: 10,
+				rejected: 0,
+				deduplicated: 0,
+				indexing_triggered: true,
+				rejected_files: [],
+			});
+
+			const result = await manager.syncNow();
+
+			expect(result.success).toBe(true);
+			expect(syncClient.uploadFiles).toHaveBeenCalledTimes(1);
+			// Single batch: batchIndex=0, isLastBatch=true
+			expect(syncClient.uploadFiles.mock.calls[0]![2]).toBe(0);
+			expect(syncClient.uploadFiles.mock.calls[0]![3]).toBe(true);
+		});
+	});
+
+	// -----------------------------------------------------------------------
 	// onStateChange callback
 	// -----------------------------------------------------------------------
 
