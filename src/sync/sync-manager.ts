@@ -342,7 +342,9 @@ export class SyncManager {
 					filesUploaded += uploadResponse.accepted;
 
 					if (uploadResponse.rejected_files?.length) {
+						logger.warn(`Batch ${batchIdx}: ${uploadResponse.rejected_files.length} file(s) rejected`);
 						for (const rf of uploadResponse.rejected_files) {
+							logger.debug(`  Rejected: ${rf.path} — ${rf.reason}`);
 							errors.push(`${rf.path}: ${rf.reason}`);
 						}
 					}
