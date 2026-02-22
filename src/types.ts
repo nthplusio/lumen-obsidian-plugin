@@ -177,6 +177,7 @@ export interface SyncManifestResponseV2 {
 	conflicts: ConflictInfo[];
 	download_endpoint: string;
 	requires_full_sync?: boolean;
+	rejected_files?: Array<{ path: string; reason: string }>;
 }
 
 /** Response from the download endpoint with base64-encoded file contents. */

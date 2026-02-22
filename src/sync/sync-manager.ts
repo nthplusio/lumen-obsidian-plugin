@@ -311,6 +311,14 @@ export class SyncManager {
 				`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
 			);
 
+			// Log files rejected by server at manifest stage (unsupported extensions)
+			if (manifestResponse.rejected_files?.length) {
+				logger.info(`Server rejected ${manifestResponse.rejected_files.length} file(s) from manifest:`);
+				for (const r of manifestResponse.rejected_files) {
+					logger.info(`  - ${r.path}: ${r.reason}`);
+				}
+			}
+
 			// ---- Phase 3: Upload requested files (batched) ----
 			let filesUploaded = 0;
 			const errors: string[] = [];
