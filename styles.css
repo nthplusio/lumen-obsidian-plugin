@@ -2432,3 +2432,118 @@
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 }
+
+/* ============================================
+   React Shared Component Styles
+   ============================================ */
+
+/* Loading dots (used in chat streaming) */
+.lumen-loading-dots {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 0;
+}
+
+.lumen-loading-dots .lumen-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-muted);
+	animation: lumen-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.lumen-loading-dots .lumen-dot:nth-child(2) {
+	animation-delay: 0.2s;
+}
+
+.lumen-loading-dots .lumen-dot:nth-child(3) {
+	animation-delay: 0.4s;
+}
+
+@keyframes lumen-dot-pulse {
+	0%, 80%, 100% {
+		transform: scale(0.4);
+		opacity: 0.4;
+	}
+	40% {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes lumen-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes lumen-shake {
+	0%, 100% { transform: translateX(0); }
+	20% { transform: translateX(-4px); }
+	40% { transform: translateX(4px); }
+	60% { transform: translateX(-2px); }
+	80% { transform: translateX(2px); }
+}
+
+@keyframes lumen-check {
+	from {
+		stroke-dashoffset: 20;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
+/* Source chips (used in chat results) */
+.lumen-source-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 8px;
+}
+
+.lumen-source-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 12px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	transition: background 150ms ease, color 150ms ease;
+	min-height: 24px;
+}
+
+.lumen-source-chip:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+}
+
+.lumen-source-chip-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.lumen-source-chip-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.lumen-source-chip-score {
+	opacity: 0.7;
+	font-size: 0.85em;
+}
+
+/* Markdown content wrapper */
+.lumen-markdown-content {
+	line-height: 1.5;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+}
