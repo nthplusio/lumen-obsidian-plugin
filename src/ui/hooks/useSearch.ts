@@ -17,6 +17,8 @@ const DEBOUNCE_MS = 300;
 
 type SearchStatus = 'idle' | 'typing' | 'loading' | 'retrying' | 'done' | 'error' | 'no-results' | 'not-configured';
 
+const MAX_HISTORY = 20;
+
 interface SearchState {
 	query: string;
 	results: SearchResult[];
@@ -27,6 +29,9 @@ interface SearchState {
 	selectedTags: string[];
 	tagFilterOpen: boolean;
 	tagCache: Array<{ tag: string; count: number }> | null;
+	/** Recent successful search queries (most recent first) */
+	recentQueries: string[];
+	historyOpen: boolean;
 }
 
 type SearchAction =
@@ -38,7 +43,9 @@ type SearchAction =
 	| { type: 'TOGGLE_TAG_FILTER' }
 	| { type: 'SET_TAG_CACHE'; tags: Array<{ tag: string; count: number }> }
 	| { type: 'ADD_TAG'; tag: string }
-	| { type: 'REMOVE_TAG'; tag: string };
+	| { type: 'REMOVE_TAG'; tag: string }
+	| { type: 'ADD_HISTORY'; query: string }
+	| { type: 'SET_HISTORY_OPEN'; open: boolean };
 
 const initialState: SearchState = {
 	query: '',
@@ -50,6 +57,8 @@ const initialState: SearchState = {
 	selectedTags: [],
 	tagFilterOpen: false,
 	tagCache: null,
+	recentQueries: [],
+	historyOpen: false,
 };
 
 function searchReducer(state: SearchState, action: SearchAction): SearchState {
@@ -73,6 +82,12 @@ function searchReducer(state: SearchState, action: SearchAction): SearchState {
 			return { ...state, selectedTags: [...state.selectedTags, action.tag] };
 		case 'REMOVE_TAG':
 			return { ...state, selectedTags: state.selectedTags.filter(t => t !== action.tag) };
+		case 'ADD_HISTORY': {
+			const filtered = state.recentQueries.filter(q => q !== action.query);
+			return { ...state, recentQueries: [action.query, ...filtered].slice(0, MAX_HISTORY) };
+		}
+		case 'SET_HISTORY_OPEN':
+			return { ...state, historyOpen: action.open };
 	}
 }
 
@@ -84,6 +99,8 @@ export interface UseSearchReturn {
 	addTag: (tag: string) => void;
 	removeTag: (tag: string) => void;
 	retry: () => void;
+	selectHistoryQuery: (query: string) => void;
+	toggleHistory: () => void;
 }
 
 export function useSearch(): UseSearchReturn {
@@ -116,6 +133,7 @@ export function useSearch(): UseSearchReturn {
 				dispatch({ type: 'SET_STATUS', status: 'no-results' });
 			} else {
 				dispatch({ type: 'SET_RESULTS', results });
+				dispatch({ type: 'ADD_HISTORY', query });
 			}
 		} catch (err) {
 			if (lastQueryRef.current !== query) return;
@@ -205,5 +223,15 @@ export function useSearch(): UseSearchReturn {
 		};
 	}, []);
 
-	return { state, onQueryChange, toggleHybrid, toggleTagFilter, addTag, removeTag, retry };
+	const selectHistoryQuery = useCallback((query: string) => {
+		dispatch({ type: 'SET_QUERY', query });
+		dispatch({ type: 'SET_HISTORY_OPEN', open: false });
+		executeSearch(query);
+	}, [executeSearch]);
+
+	const toggleHistory = useCallback(() => {
+		dispatch({ type: 'SET_HISTORY_OPEN', open: !state.historyOpen });
+	}, [state.historyOpen]);
+
+	return { state, onQueryChange, toggleHybrid, toggleTagFilter, addTag, removeTag, retry, selectHistoryQuery, toggleHistory };
 }

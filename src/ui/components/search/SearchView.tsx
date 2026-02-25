@@ -25,7 +25,16 @@ export function SearchView() {
 				onToggleHybrid={search.toggleHybrid}
 				tagFilterOpen={state.tagFilterOpen}
 				onToggleTagFilter={search.toggleTagFilter}
+				historyOpen={state.historyOpen}
+				hasHistory={state.recentQueries.length > 0}
+				onToggleHistory={search.toggleHistory}
 			/>
+			{state.historyOpen && state.recentQueries.length > 0 && (
+				<SearchHistory
+					queries={state.recentQueries}
+					onSelect={search.selectHistoryQuery}
+				/>
+			)}
 			{state.tagFilterOpen && (
 				<TagFilterPanel
 					tagCache={state.tagCache}
@@ -78,15 +87,20 @@ interface SearchToolbarProps {
 	onToggleHybrid: () => void;
 	tagFilterOpen: boolean;
 	onToggleTagFilter: () => void;
+	historyOpen: boolean;
+	hasHistory: boolean;
+	onToggleHistory: () => void;
 }
 
-function SearchToolbar({ hybridMode, onToggleHybrid, tagFilterOpen, onToggleTagFilter }: SearchToolbarProps) {
+function SearchToolbar({ hybridMode, onToggleHybrid, tagFilterOpen, onToggleTagFilter, historyOpen, hasHistory, onToggleHistory }: SearchToolbarProps) {
 	const zapRef = useRef<HTMLElement>(null);
 	const tagRef = useRef<HTMLElement>(null);
+	const historyRef = useRef<HTMLElement>(null);
 
 	useEffect(() => {
 		if (zapRef.current) setIcon(zapRef.current, 'zap');
 		if (tagRef.current) setIcon(tagRef.current, 'tag');
+		if (historyRef.current) setIcon(historyRef.current, 'history');
 	}, []);
 
 	return (
@@ -109,6 +123,17 @@ function SearchToolbar({ hybridMode, onToggleHybrid, tagFilterOpen, onToggleTagF
 				<span ref={tagRef} />
 				<span className="lumen-tags-label">Tags</span>
 			</button>
+			{hasHistory && (
+				<button
+					className={`lumen-history-toggle ${historyOpen ? 'is-active' : ''}`}
+					aria-label="Recent searches"
+					aria-pressed={historyOpen}
+					onClick={onToggleHistory}
+				>
+					<span ref={historyRef} />
+					<span className="lumen-history-label">History</span>
+				</button>
+			)}
 		</div>
 	);
 }
@@ -193,6 +218,24 @@ function TagFilterPanel({ tagCache, selectedTags, onAddTag, onRemoveTag }: TagFi
 					</div>
 				)}
 			</div>
+		</div>
+	);
+}
+
+// --- SearchHistory ---
+
+function SearchHistory({ queries, onSelect }: { queries: string[]; onSelect: (q: string) => void }) {
+	return (
+		<div className="lumen-search-history">
+			{queries.map(q => (
+				<button
+					key={q}
+					className="lumen-search-history-item"
+					onClick={() => onSelect(q)}
+				>
+					<span className="lumen-search-history-text">{q}</span>
+				</button>
+			))}
 		</div>
 	);
 }
@@ -319,9 +362,11 @@ function ConfigError() {
 function ResultItem({ result, query }: { result: SearchResult; query: string }) {
 	const { app } = usePlugin();
 	const fileIconRef = useRef<HTMLSpanElement>(null);
+	const previewRef = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
 		if (fileIconRef.current) setIcon(fileIconRef.current, 'file-text');
+		if (previewRef.current) setIcon(previewRef.current, 'panel-right');
 	}, []);
 
 	const title = result.heading_hierarchy?.[0]
@@ -337,6 +382,16 @@ function ResultItem({ result, query }: { result: SearchResult; query: string }) 
 		openDocument(app, result.source_path);
 	}, [app, result.source_path]);
 
+	const handlePreview = useCallback((e: React.MouseEvent) => {
+		e.stopPropagation();
+		const normalizedPath = stripWorkspacePrefix(result.source_path.replace(/^\/+/, ''));
+		// Open in a split pane to the right
+		const leaf = app.workspace.getLeaf('split');
+		if (leaf) {
+			app.workspace.openLinkText(normalizedPath, '', false, { active: true });
+		}
+	}, [app, result.source_path]);
+
 	const tags = result.frontmatter?.tags as string[] | undefined;
 
 	return (
@@ -346,6 +401,13 @@ function ResultItem({ result, query }: { result: SearchResult; query: string }) 
 					<span className="lumen-result-file-icon" ref={fileIconRef} />
 					<span className="lumen-result-title">{title}</span>
 				</div>
+				<button
+					className="lumen-result-preview-btn"
+					aria-label="Open to the right"
+					title="Open to the right"
+					ref={previewRef}
+					onClick={handlePreview}
+				/>
 				<span className={`lumen-result-score ${scoreCls}`}>{scorePercent}%</span>
 				{result.matching_chunks && result.matching_chunks > 1 && (
 					<span className="lumen-result-chunks">{result.matching_chunks} sections</span>

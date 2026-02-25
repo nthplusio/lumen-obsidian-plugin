@@ -23,7 +23,7 @@ import { FileHasher } from './sync/file-hasher';
 import { ConflictLogger } from './sync/conflict-logger';
 import { logger } from './utils/logger';
 import { networkStatus } from './utils/network-status';
-import { DEFAULT_SETTINGS, type LumenSettings, type WorkspaceConfig } from './types';
+import { DEFAULT_SETTINGS, type ConflictEntry, type LumenSettings, type WorkspaceConfig } from './types';
 
 export default class LumenPlugin extends Plugin {
 	settings: LumenSettings = DEFAULT_SETTINGS;
@@ -33,6 +33,28 @@ export default class LumenPlugin extends Plugin {
 
 	/** Server-managed workspace config (fetched, not persisted) */
 	workspaceConfig: WorkspaceConfig | null = null;
+
+	/** Recent sync conflicts for the UI — cleared when user dismisses */
+	recentConflicts: ConflictEntry[] = [];
+	private conflictListeners: Array<(conflicts: ConflictEntry[]) => void> = [];
+
+	/** Register a listener for conflict changes (returns unsubscribe fn) */
+	onConflictsChange(cb: (conflicts: ConflictEntry[]) => void): () => void {
+		this.conflictListeners.push(cb);
+		return () => {
+			this.conflictListeners = this.conflictListeners.filter(l => l !== cb);
+		};
+	}
+
+	private notifyConflictListeners(): void {
+		for (const cb of this.conflictListeners) cb(this.recentConflicts);
+	}
+
+	/** Clear all recent conflicts (user dismissed) */
+	dismissConflicts(): void {
+		this.recentConflicts = [];
+		this.notifyConflictListeners();
+	}
 
 	// Sync components — only initialized when apiKey + workspaceId are set
 	syncManager: SyncManager | null = null;
@@ -204,17 +226,34 @@ export default class LumenPlugin extends Plugin {
 			},
 		});
 
-		// Toggle between search and chat
+		// Toggle between search, chat, and related
 		this.addCommand({
 			id: 'toggle-mode',
-			name: 'Toggle search / chat',
+			name: 'Toggle search / chat / related',
 			callback: () => {
 				this.activateMainView().then(() => {
 					const view = this.getMainView();
 					if (!view?.appRef.current) return;
-					// Read the current mode from the DOM to determine toggle direction
-					const hasChat = document.querySelector('.lumen-chat-view');
-					view.appRef.current.setMode(hasChat ? 'search' : 'chat');
+					// Determine current mode from DOM and cycle forward
+					if (document.querySelector('.lumen-related-view')) {
+						view.appRef.current.setMode('search');
+					} else if (document.querySelector('.lumen-chat-view')) {
+						view.appRef.current.setMode('related');
+					} else {
+						view.appRef.current.setMode('chat');
+					}
+				});
+			},
+		});
+
+		// Open related notes tab
+		this.addCommand({
+			id: 'open-related',
+			name: 'Open related notes',
+			callback: () => {
+				this.activateMainView().then(() => {
+					const view = this.getMainView();
+					view?.appRef.current?.setMode('related');
 				});
 			},
 		});
@@ -398,7 +437,7 @@ export default class LumenPlugin extends Plugin {
 			this.syncStatusBar?.update(state, progress);
 		});
 
-		// Handle sync completion — persist settings and poll indexing
+		// Handle sync completion — persist settings, poll indexing, surface conflicts
 		this.syncManager.onSyncComplete(async (result) => {
 			await this.saveSettings();
 			if (this.settings.lastSyncAt) {
@@ -407,6 +446,11 @@ export default class LumenPlugin extends Plugin {
 			if (result.success && result.filesUploaded > 0) {
 				this.pluginTriggeredIndexing = true;
 				this.pollIndexingStatus();
+			}
+			// Surface conflicts to the UI
+			if (result.conflicts && result.conflicts.length > 0) {
+				this.recentConflicts = result.conflicts;
+				this.notifyConflictListeners();
 			}
 		});
 
