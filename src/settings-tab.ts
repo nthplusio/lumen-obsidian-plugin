@@ -2,13 +2,14 @@
  * Settings Tab for Lumen plugin.
  *
  * Three collapsible sections: Connection, Vault Sync, and Advanced.
- * Provides API configuration, sync controls, exclude patterns
- * editor, and debug settings.
+ * Connection section is API-key-only (server URL is baked in).
+ * Vault Sync settings are read-only — managed via the Lumen dashboard.
  */
 
 import { App, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type LumenPlugin from './main';
 import { LumenHelpModal } from './help-modal';
+import { LUMEN_API_URL } from './types';
 import { formatRelativeTime } from './sync/sync-status-bar';
 import { logger } from './utils/logger';
 import type { LogEntryListener } from './utils/logger';
@@ -18,6 +19,7 @@ export class LumenSettingTab extends PluginSettingTab {
 	private _activityLogListener: LogEntryListener | null = null;
 	private _lastSyncValueEl: HTMLElement | null = null;
 	private _syncStateValueEl: HTMLElement | null = null;
+	private _connectionStatusEl: HTMLElement | null = null;
 
 	constructor(app: App, plugin: LumenPlugin) {
 		super(app, plugin);
@@ -32,7 +34,7 @@ export class LumenSettingTab extends PluginSettingTab {
 
 		const subtitleRow = containerEl.createEl('div', { cls: 'lumen-settings-subtitle-row' });
 		subtitleRow.createEl('span', {
-			text: 'Connect your Obsidian vault to your Lumen server for AI-powered semantic search.',
+			text: 'Connect your Obsidian vault to Lumen for AI-powered semantic search.',
 			cls: 'setting-item-description',
 		});
 		const docsBtn = subtitleRow.createEl('button', {
@@ -55,29 +57,15 @@ export class LumenSettingTab extends PluginSettingTab {
 	private renderConnectionSection(containerEl: HTMLElement): void {
 		const content = this.createSection(containerEl, 'Connection', true);
 
-		// --- API Endpoint URL ---
-		const urlSetting = new Setting(content)
-			.setName('API Endpoint URL')
-			.setDesc('The URL of your Lumen server');
-
-		urlSetting.addText(text =>
-			text
-				.setPlaceholder('https://app.getlumen.dev')
-				.setValue(this.plugin.settings.apiUrl)
-				.onChange(async (value) => {
-					const trimmed = value.trim();
-					this.plugin.settings.apiUrl = trimmed;
-					await this.plugin.saveSettings();
-					this.updateUrlValidation(urlSetting, trimmed);
-				})
-		);
-
-		this.updateUrlValidation(urlSetting, this.plugin.settings.apiUrl);
+		// --- Server URL (read-only label) ---
+		new Setting(content)
+			.setName('Server')
+			.setDesc(LUMEN_API_URL);
 
 		// --- API Key ---
 		const keySetting = new Setting(content)
 			.setName('API Key')
-			.setDesc('Your Lumen API key (starts with vr_). Get one from your server\'s admin panel.');
+			.setDesc('Your Lumen API key (starts with vr_). Get one from your Lumen dashboard.');
 
 		keySetting.addText(text => {
 			text
@@ -95,21 +83,19 @@ export class LumenSettingTab extends PluginSettingTab {
 
 		this.updateKeyValidation(keySetting, this.plugin.settings.apiKey);
 
-		// --- Connection Test ---
-		const statusEl = content.createEl('div', { cls: 'lumen-status' });
+		// --- Connection Status ---
+		this._connectionStatusEl = content.createEl('div', { cls: 'lumen-status' });
+		this.renderConnectionStatus();
 
+		// --- Test Connection / Connect ---
 		new Setting(content)
 			.setName('Test Connection')
-			.setDesc('Verify that the plugin can reach your Lumen server')
+			.setDesc('Verify connectivity and fetch workspace configuration')
 			.addButton(button =>
 				button
 					.setButtonText('Test Connection')
 					.setCta()
 					.onClick(async () => {
-						if (!this.plugin.settings.apiUrl) {
-							new Notice('Please enter the API endpoint URL first');
-							return;
-						}
 						if (!this.plugin.settings.apiKey) {
 							new Notice('Please enter your API key first');
 							return;
@@ -117,7 +103,7 @@ export class LumenSettingTab extends PluginSettingTab {
 
 						button.setButtonText('Connecting...');
 						button.setDisabled(true);
-						statusEl.empty();
+						this.clearConnectionStatus();
 
 						try {
 							const status = await this.plugin.apiClient.testConnection();
@@ -129,22 +115,22 @@ export class LumenSettingTab extends PluginSettingTab {
 								await this.plugin.saveSettings();
 							}
 
-							statusEl.empty();
-							statusEl.createEl('div', {
-								text: `Connected! Server: ${status.status} | ${chunkCount} chunks indexed`,
-								cls: 'lumen-status-success',
-							});
+							// Fetch workspace config
+							const config = await this.plugin.fetchAndApplyConfig();
+							const workspaceName = config?.workspace_name ?? 'Unknown';
 
-							new Notice(`Connected to Lumen! ${chunkCount} chunks indexed.`);
+							this.showConnectionStatus(
+								'success',
+								`Connected to "${workspaceName}" \u2014 ${chunkCount} chunks indexed`,
+							);
+
+							new Notice(`Connected to ${workspaceName}!`);
+
+							// Re-render to show updated sync info
+							this.display();
 						} catch (err) {
 							const errorMsg = this.formatConnectionError(err);
-
-							statusEl.empty();
-							statusEl.createEl('div', {
-								text: errorMsg,
-								cls: 'lumen-status-error',
-							});
-
+							this.showConnectionStatus('error', errorMsg);
 							new Notice(`Connection failed: ${errorMsg}`);
 						} finally {
 							button.setButtonText('Test Connection');
@@ -155,50 +141,43 @@ export class LumenSettingTab extends PluginSettingTab {
 	}
 
 	// -----------------------------------------------------------------------
-	// Vault Sync Section
+	// Vault Sync Section (read-only, server-managed)
 	// -----------------------------------------------------------------------
 
 	private renderSyncSection(containerEl: HTMLElement): void {
 		const content = this.createSection(containerEl, 'Vault Sync', true);
 
-		// Enable sync toggle
-		new Setting(content)
-			.setName('Enable automatic sync')
-			.setDesc('Automatically sync vault changes to Lumen for indexing')
-			.addToggle(toggle =>
-				toggle
-					.setValue(this.plugin.settings.syncEnabled)
-					.onChange(async (value) => {
-						this.plugin.settings.syncEnabled = value;
-						await this.plugin.saveSettings();
-					})
-			);
+		const config = this.plugin.workspaceConfig;
 
-		// Auto-sync interval
+		// Sync status (from server config)
+		const syncEnabled = config?.sync_enabled ?? true;
+		const syncInterval = config?.sync_interval_minutes ?? 5;
+
 		new Setting(content)
-			.setName('Auto-sync interval')
-			.setDesc('How often to check for and sync pending changes')
-			.addDropdown(dropdown =>
+			.setName('Automatic sync')
+			.setDesc('Managed from your Lumen dashboard')
+			.addToggle(toggle => {
+				toggle.setValue(syncEnabled).setDisabled(true);
+			});
+
+		new Setting(content)
+			.setName('Sync interval')
+			.setDesc('Managed from your Lumen dashboard')
+			.addDropdown(dropdown => {
 				dropdown
-					.addOption('0', 'Manual only')
-					.addOption('1', '1 minute')
-					.addOption('2', '2 minutes')
-					.addOption('5', '5 minutes')
-					.addOption('10', '10 minutes')
-					.addOption('15', '15 minutes')
-					.addOption('30', '30 minutes')
-					.addOption('60', '1 hour')
-					.setValue(String(this.plugin.settings.autoSyncInterval))
-					.onChange(async (value) => {
-						this.plugin.settings.autoSyncInterval = parseInt(value, 10);
-						await this.plugin.saveSettings();
-					})
-			);
+					.addOption(String(syncInterval), `Every ${syncInterval} minute${syncInterval !== 1 ? 's' : ''}`)
+					.setValue(String(syncInterval))
+					.setDisabled(true);
+				// Show the current value as a disabled dropdown
+				dropdown.selectEl.style.opacity = '0.7';
+			});
 
-		// Exclude patterns (managed by server)
-		new Setting(content)
-			.setName('Exclude patterns')
-			.setDesc('Exclude patterns are managed on the Lumen server. Visit your server dashboard to configure them.');
+		// Exclude patterns (read-only from server)
+		if (config?.exclude_patterns && config.exclude_patterns.length > 0) {
+			new Setting(content)
+				.setName('Exclude patterns')
+				.setDesc(`Managed from dashboard: ${config.exclude_patterns.join(', ')}`);
+		}
 
 		// Sync info
 		this.renderSyncInfo(content);
@@ -302,6 +281,41 @@ export class LumenSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+	}
+
+	// -----------------------------------------------------------------------
+	// Connection Status Display
+	// -----------------------------------------------------------------------
+
+	private renderConnectionStatus(): void {
+		if (!this._connectionStatusEl) return;
+		this._connectionStatusEl.empty();
+
+		const config = this.plugin.workspaceConfig;
+		if (config) {
+			this._connectionStatusEl.createEl('div', {
+				text: `Connected to "${config.workspace_name}"`,
+				cls: 'lumen-status-success',
+			});
+		} else if (this.plugin.settings.apiKey) {
+			this._connectionStatusEl.createEl('div', {
+				text: 'Not connected \u2014 click Test Connection to verify',
+				cls: 'lumen-status-info',
+			});
+		}
+	}
+
+	private clearConnectionStatus(): void {
+		this._connectionStatusEl?.empty();
+	}
+
+	private showConnectionStatus(type: 'success' | 'error' | 'info', message: string): void {
+		if (!this._connectionStatusEl) return;
+		this._connectionStatusEl.empty();
+		this._connectionStatusEl.createEl('div', {
+			text: message,
+			cls: `lumen-status-${type}`,
+		});
 	}
 
 	// -----------------------------------------------------------------------
@@ -488,31 +502,10 @@ export class LumenSettingTab extends PluginSettingTab {
 	// Validators
 	// -----------------------------------------------------------------------
 
-	private updateUrlValidation(setting: Setting, value: string): void {
-		setting.descEl.empty();
-		if (!value) {
-			setting.setDesc('The URL of your Lumen server');
-			return;
-		}
-
-		try {
-			const url = new URL(value);
-			if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-				setting.setDesc('URL must start with https:// or http://');
-			} else if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-				setting.setDesc('Warning: Using HTTP for non-localhost. HTTPS is recommended for security.');
-			} else {
-				setting.setDesc('The URL of your Lumen server');
-			}
-		} catch {
-			setting.setDesc('Please enter a valid URL (e.g., https://app.getlumen.dev)');
-		}
-	}
-
 	private updateKeyValidation(setting: Setting, value: string): void {
 		setting.descEl.empty();
 		if (!value) {
-			setting.setDesc('Your Lumen API key (starts with vr_). Get one from your server\'s admin panel.');
+			setting.setDesc('Your Lumen API key (starts with vr_). Get one from your Lumen dashboard.');
 			return;
 		}
 
@@ -521,7 +514,7 @@ export class LumenSettingTab extends PluginSettingTab {
 		} else if (value.length < 10) {
 			setting.setDesc('This key looks too short. Make sure you copied the full key.');
 		} else {
-			setting.setDesc('Your Lumen API key (starts with vr_). Get one from your server\'s admin panel.');
+			setting.setDesc('Your Lumen API key (starts with vr_). Get one from your Lumen dashboard.');
 		}
 	}
 
@@ -535,16 +528,16 @@ export class LumenSettingTab extends PluginSettingTab {
 
 		// Network / DNS errors
 		if (msg.includes('ENOTFOUND') || msg.includes('getaddrinfo')) {
-			return 'Server not found. Check the URL — the domain may be misspelled or the server may be down.';
+			return 'Server not found. Lumen may be temporarily unavailable.';
 		}
 		if (msg.includes('ECONNREFUSED')) {
-			return 'Connection refused. The server may not be running or the port may be wrong.';
+			return 'Connection refused. Lumen may be temporarily unavailable.';
 		}
 		if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
-			return 'Connection timed out. The server may be unreachable or behind a firewall.';
+			return 'Connection timed out. Lumen may be temporarily unavailable.';
 		}
 		if (msg.includes('CERT') || msg.includes('certificate')) {
-			return 'SSL certificate error. The server\'s HTTPS certificate may be invalid or self-signed.';
+			return 'SSL certificate error. Please try again later.';
 		}
 
 		// Auth errors
@@ -557,10 +550,10 @@ export class LumenSettingTab extends PluginSettingTab {
 
 		// Server errors
 		if (msg.includes('404')) {
-			return 'Endpoint not found. Make sure the URL points to a Lumen server.';
+			return 'Endpoint not found. Lumen may be updating. Please try again later.';
 		}
 		if (msg.includes('500') || msg.includes('502') || msg.includes('503')) {
-			return 'Server error. The Lumen server may be starting up or experiencing issues.';
+			return 'Server error. Lumen may be starting up or experiencing issues.';
 		}
 
 		return msg;

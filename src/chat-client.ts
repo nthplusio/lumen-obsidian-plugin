@@ -33,14 +33,13 @@ export class ChatClient extends LumenHttpClient {
 	private workspaceId: string;
 	private planCache: WorkspacePlanInfo | null = null;
 
-	constructor(apiUrl: string, apiKey: string, workspaceId: string) {
-		super(apiUrl, apiKey);
+	constructor(apiKey: string, workspaceId: string) {
+		super(apiKey);
 		this.workspaceId = workspaceId;
 	}
 
 	/** Update connection settings (e.g., after settings change) */
-	updateSettings(apiUrl: string, apiKey: string, workspaceId: string): void {
-		this.apiUrl = apiUrl;
+	updateSettings(apiKey: string, workspaceId: string): void {
 		this.apiKey = apiKey;
 		this.workspaceId = workspaceId;
 		// Invalidate plan cache on settings change

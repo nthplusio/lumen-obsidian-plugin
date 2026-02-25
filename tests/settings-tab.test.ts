@@ -1,13 +1,13 @@
 /**
  * LumenSettingTab unit tests.
  *
- * Tests collapsible sections, settings persistence, exclude patterns
- * editor, sync controls, connection test, and validation logic.
+ * Tests collapsible sections, settings persistence, connection test,
+ * server-managed sync settings (read-only), and validation logic.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LumenSettingTab } from '../src/settings-tab';
-import { DEFAULT_SETTINGS } from '../src/types';
+import { DEFAULT_SETTINGS, LUMEN_API_URL } from '../src/types';
 import type { LumenSettings } from '../src/types';
 
 // ---------------------------------------------------------------------------
@@ -73,8 +73,9 @@ vi.mock('obsidian', () => ({
 
 		addToggle(cb: Function) {
 			const t: any = {
-				_value: false, _onChange: null,
+				_value: false, _onChange: null, _disabled: false,
 				setValue(v: boolean) { this._value = v; return this; },
+				setDisabled(d: boolean) { this._disabled = d; return this; },
 				onChange(fn: Function) { this._onChange = fn; return this; },
 			};
 			this._toggles.push(t);
@@ -85,9 +86,11 @@ vi.mock('obsidian', () => ({
 		addDropdown(cb: Function) {
 			const d: any = {
 				_options: {} as Record<string, string>,
-				_value: '', _onChange: null,
+				_value: '', _onChange: null, _disabled: false,
+				selectEl: { style: {} as Record<string, string> },
 				addOption(value: string, label: string) { this._options[value] = label; return this; },
 				setValue(v: string) { this._value = v; return this; },
+				setDisabled(d: boolean) { this._disabled = d; return this; },
 				onChange(fn: Function) { this._onChange = fn; return this; },
 			};
 			this._dropdowns.push(d);
@@ -135,6 +138,9 @@ function createMockElement(tag = 'div'): any {
 			v.split(' ').filter(Boolean).forEach(c => classSet.add(c));
 		},
 		children,
+		firstChild: null,
+		get scrollHeight() { return 100; },
+		scrollTop: 0,
 		classList: {
 			add: (c: string) => classSet.add(c),
 			remove: (c: string) => classSet.delete(c),
@@ -193,6 +199,20 @@ function createMockPlugin(settingsOverrides: Partial<LumenSettings> = {}) {
 		settings: createSettings(settingsOverrides),
 		saveSettings: vi.fn().mockResolvedValue(undefined),
 		triggerSync: vi.fn().mockResolvedValue(undefined),
+		fetchAndApplyConfig: vi.fn().mockResolvedValue({
+			workspace_name: 'Test Workspace',
+			workspace_id: 'ws-001',
+			sync_enabled: true,
+			sync_interval_minutes: 5,
+			event_sync_enabled: true,
+			exclude_patterns: [],
+			max_file_size_bytes: 50 * 1024 * 1024,
+			allowed_extensions: ['.md'],
+			indexing_schedule: 'nightly',
+			features: { chat_enabled: true, deep_research_enabled: false },
+		}),
+		activateDebugLogView: vi.fn(),
+		workspaceConfig: null as any,
 		apiClient: {
 			testConnection: vi.fn().mockResolvedValue({
 				status: 'healthy',
@@ -254,11 +274,7 @@ describe('LumenSettingTab', () => {
 		settingInstances.length = 0;
 
 		mockPlugin = createMockPlugin({
-			apiUrl: 'https://app.getlumen.io',
 			apiKey: 'vr_test_key_12345',
-			syncEnabled: true,
-			autoSyncInterval: 5,
-			excludePatterns: ['.obsidian/', '.trash/'],
 			workspaceId: 'ws-001',
 			deviceId: 'dev-001',
 			lastSyncAt: '',
@@ -349,22 +365,10 @@ describe('LumenSettingTab', () => {
 	// -------------------------------------------------------------------
 
 	describe('Connection settings', () => {
-		it('creates API Endpoint URL setting', () => {
-			const s = findSetting('API Endpoint URL');
+		it('creates Server setting with baked-in URL', () => {
+			const s = findSetting('Server');
 			expect(s).toBeDefined();
-			expect(s._texts).toHaveLength(1);
-		});
-
-		it('API URL text is initialized with current value', () => {
-			const s = findSetting('API Endpoint URL');
-			expect(s._texts[0]._value).toBe('https://app.getlumen.io');
-		});
-
-		it('API URL onChange updates settings and saves', async () => {
-			const s = findSetting('API Endpoint URL');
-			await s._texts[0]._onChange('https://new-url.example.com');
-			expect(mockPlugin.settings.apiUrl).toBe('https://new-url.example.com');
-			expect(mockPlugin.saveSettings).toHaveBeenCalled();
+			expect(s._desc).toBe(LUMEN_API_URL);
 		});
 
 		it('creates API Key setting with password input', () => {
@@ -397,7 +401,7 @@ describe('LumenSettingTab', () => {
 			const s = findSetting('Test Connection');
 			await s._buttons[0]._onClick();
 			expect(Notice).toHaveBeenCalledWith(
-				expect.stringContaining('Connected to Lumen'),
+				expect.stringContaining('Connected to'),
 			);
 		});
 
@@ -410,20 +414,6 @@ describe('LumenSettingTab', () => {
 			expect(Notice).toHaveBeenCalledWith(
 				expect.stringContaining('Connection failed'),
 			);
-		});
-
-		it('requires API URL before testing', async () => {
-			mockPlugin.settings.apiUrl = '';
-			// Re-render
-			settingInstances.length = 0;
-			tab.display();
-
-			const s = findSetting('Test Connection');
-			await s._buttons[0]._onClick();
-			expect(Notice).toHaveBeenCalledWith(
-				expect.stringContaining('API endpoint URL'),
-			);
-			expect(mockPlugin.apiClient.testConnection).not.toHaveBeenCalled();
 		});
 
 		it('requires API Key before testing', async () => {
@@ -441,64 +431,48 @@ describe('LumenSettingTab', () => {
 	});
 
 	// -------------------------------------------------------------------
-	// Vault Sync settings
+	// Vault Sync settings (read-only, server-managed)
 	// -------------------------------------------------------------------
 
 	describe('Vault Sync settings', () => {
-		it('creates sync enabled toggle', () => {
-			const s = findSetting('Enable automatic sync');
+		it('creates automatic sync toggle (disabled)', () => {
+			const s = findSetting('Automatic sync');
 			expect(s).toBeDefined();
 			expect(s._toggles).toHaveLength(1);
+			expect(s._toggles[0]._disabled).toBe(true);
 		});
 
-		it('sync toggle is initialized with current value', () => {
-			const s = findSetting('Enable automatic sync');
+		it('sync toggle is initialized with server default (true)', () => {
+			const s = findSetting('Automatic sync');
 			expect(s._toggles[0]._value).toBe(true);
 		});
 
-		it('sync toggle onChange updates settings and saves', async () => {
-			const s = findSetting('Enable automatic sync');
-			await s._toggles[0]._onChange(false);
-			expect(mockPlugin.settings.syncEnabled).toBe(false);
-			expect(mockPlugin.saveSettings).toHaveBeenCalled();
-		});
-
-		it('creates auto-sync interval dropdown', () => {
-			const s = findSetting('Auto-sync interval');
+		it('creates sync interval dropdown (disabled)', () => {
+			const s = findSetting('Sync interval');
 			expect(s).toBeDefined();
 			expect(s._dropdowns).toHaveLength(1);
+			expect(s._dropdowns[0]._disabled).toBe(true);
 		});
 
-		it('interval dropdown has expected options', () => {
-			const s = findSetting('Auto-sync interval');
-			const opts = s._dropdowns[0]._options;
-			expect(opts['0']).toBe('Manual only');
-			expect(opts['5']).toBe('5 minutes');
-			expect(opts['60']).toBe('1 hour');
-		});
+		it('shows exclude patterns when config has them', () => {
+			mockPlugin.workspaceConfig = {
+				workspace_name: 'Test',
+				workspace_id: 'ws-001',
+				sync_enabled: true,
+				sync_interval_minutes: 5,
+				event_sync_enabled: true,
+				exclude_patterns: ['.obsidian/', '.trash/'],
+				max_file_size_bytes: 50 * 1024 * 1024,
+				allowed_extensions: ['.md'],
+				indexing_schedule: 'nightly',
+				features: { chat_enabled: true, deep_research_enabled: false },
+			};
+			settingInstances.length = 0;
+			tab.display();
 
-		it('interval dropdown is initialized with current value', () => {
-			const s = findSetting('Auto-sync interval');
-			expect(s._dropdowns[0]._value).toBe('5');
-		});
-
-		it('interval onChange updates settings as number', async () => {
-			const s = findSetting('Auto-sync interval');
-			await s._dropdowns[0]._onChange('10');
-			expect(mockPlugin.settings.autoSyncInterval).toBe(10);
-			expect(mockPlugin.saveSettings).toHaveBeenCalled();
-		});
-	});
-
-	// -------------------------------------------------------------------
-	// Exclude patterns
-	// -------------------------------------------------------------------
-
-	describe('exclude patterns', () => {
-		it('creates exclude patterns setting with server-managed description', () => {
 			const s = findSetting('Exclude patterns');
 			expect(s).toBeDefined();
-			expect(s._desc).toContain('managed on the Lumen server');
+			expect(s._desc).toContain('.obsidian/');
 		});
 	});
 

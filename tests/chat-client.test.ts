@@ -31,7 +31,7 @@ describe('ChatClient', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		client = new ChatClient('http://localhost:8080', 'test-key', 'ws-123');
+		client = new ChatClient('test-key', 'ws-123');
 	});
 
 	// -----------------------------------------------------------------------
@@ -50,7 +50,7 @@ describe('ChatClient', () => {
 			expect(result.subscriptionStatus).toBe('active');
 			expect(mockRequestUrl).toHaveBeenCalledOnce();
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'http://localhost:8080/api/workspaces/ws-123',
+				url: 'https://app.getlumen.dev/api/workspaces/ws-123',
 				method: 'GET',
 			}));
 		});
@@ -119,7 +119,7 @@ describe('ChatClient', () => {
 
 			expect(result.id).toBe('conv-abc');
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'http://localhost:8080/api/conversations',
+				url: 'https://app.getlumen.dev/api/conversations',
 				method: 'POST',
 			}));
 		});
@@ -145,7 +145,7 @@ describe('ChatClient', () => {
 			await client.listConversations(10, 5);
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'http://localhost:8080/api/conversations?limit=10&offset=5',
+				url: 'https://app.getlumen.dev/api/conversations?limit=10&offset=5',
 				method: 'GET',
 			}));
 		});
@@ -158,7 +158,7 @@ describe('ChatClient', () => {
 			await client.deleteConversation('conv-123');
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'http://localhost:8080/api/conversations/conv-123',
+				url: 'https://app.getlumen.dev/api/conversations/conv-123',
 				method: 'DELETE',
 			}));
 		});
@@ -183,7 +183,7 @@ describe('ChatClient', () => {
 			await client.sendMessage('conv-1', 'Test message', { deepResearch: true });
 
 			const callArgs = mockRequestUrl.mock.calls[0][0];
-			expect(callArgs.url).toBe('http://localhost:8080/api/conversations/conv-1/messages');
+			expect(callArgs.url).toBe('https://app.getlumen.dev/api/conversations/conv-1/messages');
 			expect(callArgs.method).toBe('POST');
 
 			const body = JSON.parse(callArgs.body);

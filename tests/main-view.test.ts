@@ -195,7 +195,6 @@ vi.stubGlobal('NodeFilter', { SHOW_TEXT: 4 });
 // ---------------------------------------------------------------------------
 
 function buildView(opts: {
-	apiUrl?: string;
 	apiKey?: string;
 	searchFn?: (...args: any[]) => Promise<any>;
 	chatFn?: (...args: any[]) => Promise<any>;
@@ -227,7 +226,6 @@ function buildView(opts: {
 
 	const mockPlugin = {
 		settings: {
-			apiUrl: opts.apiUrl ?? 'http://localhost:8080',
 			apiKey: opts.apiKey ?? 'test-key-123',
 		},
 		apiClient: {
@@ -540,18 +538,6 @@ describe('LumenMainView', () => {
 	// -------------------------------------------------------------------
 
 	describe('configuration error', () => {
-		it('shows config error when apiUrl is empty', async () => {
-			const searchFn = vi.fn().mockResolvedValue([]);
-			const { view, contentEl } = buildView({ apiUrl: '', searchFn });
-			await view.onOpen();
-
-			await executeSearchDirectly(view, 'test');
-
-			const errorState = findFirstByClass(contentEl, 'lumen-error-state');
-			expect(errorState).toBeDefined();
-			expect(searchFn).not.toHaveBeenCalled();
-		});
-
 		it('shows config error when apiKey is empty', async () => {
 			const searchFn = vi.fn().mockResolvedValue([]);
 			const { view, contentEl } = buildView({ apiKey: '', searchFn });
@@ -1348,9 +1334,9 @@ describe('LumenMainView', () => {
 				expect((view as any).tagCache).toEqual([]);
 			});
 
-			it('does not fetch tags if apiUrl is empty', async () => {
+			it('does not fetch tags if apiKey is empty', async () => {
 				const listTagsFn = vi.fn().mockResolvedValue(mockTags);
-				const { view, contentEl } = buildView({ apiUrl: '', listTagsFn });
+				const { view, contentEl } = buildView({ apiKey: '', listTagsFn });
 				await view.onOpen();
 
 				const tagsBtn = findFirstByClass(contentEl, 'lumen-tags-toggle')!;

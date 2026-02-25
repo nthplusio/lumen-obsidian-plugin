@@ -78,6 +78,11 @@ export class SyncManager {
 	// Batch upload timing for ETA calculation
 	private batchDurations: number[] = [];
 
+	// Sync config (set from server-managed WorkspaceConfig)
+	private syncEnabled = true;
+	private autoSyncIntervalMinutes = 5;
+	private eventSyncEnabled = true;
+
 	// Cached sync config from server
 	private currentExcludePatterns: string[] = ['.obsidian/', '.trash/'];
 	private currentMaxFileSize: number = 50 * 1024 * 1024;
@@ -116,15 +121,18 @@ export class SyncManager {
 	async initialize(): Promise<void> {
 		this.registerVaultEvents();
 
-		if (this.settings.eventSyncEnabled) {
+		if (this.eventSyncEnabled) {
 			this.registerVisibilityHandler();
 		}
 
-		if (this.settings.syncEnabled && this.settings.autoSyncInterval > 0) {
-			this.startAutoSync();
-		}
-
 		logger.info('SyncManager initialized');
+	}
+
+	/** Apply server-managed sync configuration. */
+	applySyncConfig(config: { sync_enabled: boolean; sync_interval_minutes: number; event_sync_enabled: boolean }): void {
+		this.syncEnabled = config.sync_enabled;
+		this.autoSyncIntervalMinutes = config.sync_interval_minutes;
+		this.eventSyncEnabled = config.event_sync_enabled;
 	}
 
 	/**
@@ -140,16 +148,16 @@ export class SyncManager {
 	startAutoSync(): void {
 		this.stopAutoSync();
 
-		if (this.settings.autoSyncInterval <= 0) return;
+		if (this.autoSyncIntervalMinutes <= 0) return;
 
-		const intervalMs = this.settings.autoSyncInterval * 60_000;
+		const intervalMs = this.autoSyncIntervalMinutes * 60_000;
 		this.autoSyncTimer = window.setInterval(() => {
 			if (!this.syncInProgress && this.pendingChanges.size > 0) {
 				this.executeSync(false);
 			}
 		}, intervalMs);
 
-		logger.info(`Auto-sync enabled (${this.settings.autoSyncInterval}m interval)`);
+		logger.info(`Auto-sync enabled (${this.autoSyncIntervalMinutes}m interval)`);
 	}
 
 	/** Disable periodic auto-sync. */
@@ -770,7 +778,7 @@ export class SyncManager {
 	// -----------------------------------------------------------------------
 
 	private scheduleDebounce(): void {
-		if (!this.settings.syncEnabled || !this.settings.eventSyncEnabled) return;
+		if (!this.syncEnabled || !this.eventSyncEnabled) return;
 
 		// If the window is hidden, defer sync until it becomes visible
 		if (typeof document !== 'undefined' && document.hidden) {

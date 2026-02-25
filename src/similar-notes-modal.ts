@@ -62,8 +62,8 @@ export class SimilarNotesModal extends Modal {
 	}
 
 	private async fetchSimilarNotes(): Promise<void> {
-		if (!this.plugin.settings.apiUrl || !this.plugin.settings.apiKey) {
-			this.showError('Not configured', 'Set your API URL and key in Settings → Lumen.');
+		if (!this.plugin.settings.apiKey) {
+			this.showError('Not configured', 'Set your API key in Settings → Lumen.');
 			return;
 		}
 

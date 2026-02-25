@@ -995,7 +995,7 @@ export class LumenMainView extends ItemView {
 	/** Execute the search against the MCP endpoint with retry logic */
 	private async executeSearch(query: string, retryCount = 0): Promise<void> {
 		// Check configuration
-		if (!this.plugin.settings.apiUrl || !this.plugin.settings.apiKey) {
+		if (!this.plugin.settings.apiKey) {
 			this.showConfigError();
 			return;
 		}
@@ -1249,7 +1249,7 @@ export class LumenMainView extends ItemView {
 
 	/** Fetch tags from the API and cache them */
 	private async fetchTags(): Promise<void> {
-		if (!this.plugin.settings.apiUrl || !this.plugin.settings.apiKey) return;
+		if (!this.plugin.settings.apiKey) return;
 
 		try {
 			this.tagCache = await this.plugin.apiClient.listTags();

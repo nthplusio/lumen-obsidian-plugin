@@ -39,7 +39,7 @@ export class FileHasher {
 	private vault: Vault;
 	private settings: LumenSettings;
 	private hashCache: Map<string, CachedHash> = new Map();
-	/** Server-provided exclude patterns. Falls back to settings.excludePatterns. */
+	/** Server-provided exclude patterns (updated from workspace config). */
 	excludePatterns: string[];
 	/** Server-provided max file size in bytes. Defaults to 50MB. */
 	maxFileSize: number;
@@ -47,7 +47,7 @@ export class FileHasher {
 	constructor(vault: Vault, settings: LumenSettings) {
 		this.vault = vault;
 		this.settings = settings;
-		this.excludePatterns = settings.excludePatterns;
+		this.excludePatterns = ['.obsidian/', '.trash/'];
 		this.maxFileSize = 50 * 1024 * 1024; // 50MB default
 	}
 

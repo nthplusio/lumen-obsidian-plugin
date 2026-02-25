@@ -167,7 +167,6 @@ function flushMicrotasks(): Promise<void> {
 
 function buildModal(opts: {
 	documentPath?: string;
-	apiUrl?: string;
 	apiKey?: string;
 	searchSimilarFn?: (...args: any[]) => Promise<any>;
 } = {}) {
@@ -177,7 +176,6 @@ function buildModal(opts: {
 
 	const mockPlugin = {
 		settings: {
-			apiUrl: opts.apiUrl ?? 'http://localhost:8080',
 			apiKey: opts.apiKey ?? 'test-key-123',
 		},
 		apiClient: {
@@ -528,16 +526,6 @@ describe('SimilarNotesModal', () => {
 	// -------------------------------------------------------------------
 
 	describe('config error', () => {
-		it('shows config error when apiUrl is empty', async () => {
-			const searchSimilarFn = vi.fn().mockResolvedValue([]);
-			const { modal, contentEl } = buildModal({ apiUrl: '', searchSimilarFn });
-			await modal.onOpen();
-
-			const title = findFirstByClass(contentEl, 'lumen-error-title');
-			expect(title?.textContent).toBe('Not configured');
-			expect(searchSimilarFn).not.toHaveBeenCalled();
-		});
-
 		it('shows config error when apiKey is empty', async () => {
 			const searchSimilarFn = vi.fn().mockResolvedValue([]);
 			const { modal, contentEl } = buildModal({ apiKey: '', searchSimilarFn });

@@ -24,7 +24,7 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const API_URL = 'https://app.getlumen.io';
+const API_URL = 'https://app.getlumen.dev';
 const API_KEY = 'lumen_sk_test_key_abc123';
 const WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -55,7 +55,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 function createClient(): SyncClient {
-	return new SyncClient(API_URL, API_KEY, WORKSPACE_ID);
+	return new SyncClient(API_KEY, WORKSPACE_ID);
 }
 
 function mockRequestUrlSuccess(status: number, json: unknown) {
@@ -422,33 +422,20 @@ describe('SyncClient', () => {
 	// -----------------------------------------------------------------------
 
 	describe('updateSettings', () => {
-		it('changes endpoint URL and auth for subsequent requests', async () => {
+		it('changes auth and workspace for subsequent requests', async () => {
 			const client = createClient();
 
-			const newUrl = 'https://new.getlumen.io';
 			const newKey = 'lumen_sk_new_key';
 			const newWorkspace = '00000000-0000-4000-8000-000000000002';
 
-			client.updateSettings(newUrl, newKey, newWorkspace);
+			client.updateSettings(newKey, newWorkspace);
 
 			mockRequestUrlSuccess(200, statusResponse);
 			await client.getSyncStatus();
 
 			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${newUrl}/api/workspaces/${newWorkspace}/sync/status`);
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${newWorkspace}/sync/status`);
 			expect(call.headers['X-API-Key']).toBe(newKey);
-		});
-
-		it('strips trailing slashes from URL', async () => {
-			const client = createClient();
-			client.updateSettings('https://example.com///', 'key', 'ws');
-
-			mockRequestUrlSuccess(200, statusResponse);
-			await client.getSyncStatus();
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toMatch(/^https:\/\/example\.com\/api\//);
-			expect(call.url).not.toContain('///');
 		});
 	});
 
@@ -701,14 +688,13 @@ describe('SyncClient', () => {
 			);
 		});
 
-		it('handles URL with trailing slash', async () => {
-			const client = new SyncClient('https://app.getlumen.io/', API_KEY, WORKSPACE_ID);
+		it('uses baked-in API URL for all requests', async () => {
+			const client = new SyncClient(API_KEY, WORKSPACE_ID);
 			mockRequestUrlSuccess(200, statusResponse);
 			await client.getSyncStatus();
 
 			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			// Should not have double slashes
-			expect(call.url).toBe(`https://app.getlumen.io/api/workspaces/${WORKSPACE_ID}/sync/status`);
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/status`);
 		});
 	});
 });

@@ -3,21 +3,23 @@
  *
  * Provides shared credential management, URL normalization, and headers
  * for ApiClient, ChatClient, and SyncClient.
+ *
+ * The API URL is baked in as LUMEN_API_URL — not user-configurable.
  */
+
+import { LUMEN_API_URL } from './types';
 
 /** Abstract base for all Lumen HTTP clients */
 export abstract class LumenHttpClient {
-	protected apiUrl: string;
 	protected apiKey: string;
 
-	constructor(apiUrl: string, apiKey: string) {
-		this.apiUrl = apiUrl;
+	constructor(apiKey: string) {
 		this.apiKey = apiKey;
 	}
 
-	/** Normalize base URL (strip trailing slashes) */
+	/** Base URL (baked-in constant, trailing slashes stripped) */
 	protected get baseUrl(): string {
-		return this.apiUrl.replace(/\/+$/, '');
+		return LUMEN_API_URL.replace(/\/+$/, '');
 	}
 
 	/** Common headers for authenticated JSON requests */

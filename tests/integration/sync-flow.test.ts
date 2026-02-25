@@ -56,9 +56,6 @@ vi.mock('obsidian', () => ({
 function createSettings(overrides: Partial<LumenSettings> = {}): LumenSettings {
 	return {
 		...DEFAULT_SETTINGS,
-		syncEnabled: true,
-		autoSyncInterval: 5,
-		apiUrl: 'https://app.getlumen.io',
 		apiKey: 'test-key',
 		workspaceId: 'ws-001',
 		deviceId: 'test-device-001',
@@ -582,7 +579,7 @@ describe('Sync Flow Integration', () => {
 				createMockTFile('notes/b.md', 2000, 75),
 				createMockTFile('notes/c.md', 3000, 60),
 			];
-			await buildStack(files, { syncEnabled: true });
+			await buildStack(files);
 
 			await manager.initialize();
 
@@ -627,7 +624,7 @@ describe('Sync Flow Integration', () => {
 			const files = [
 				createMockTFile('notes/a.md', 1000, 50),
 			];
-			await buildStack(files, { syncEnabled: true });
+			await buildStack(files);
 
 			await manager.initialize();
 
@@ -671,9 +668,8 @@ describe('Sync Flow Integration', () => {
 				createMockTFile('.trash/deleted.md', 3000, 20),
 				createMockTFile('templates/daily.md', 4000, 40),
 			];
-			await buildStack(files, {
-				excludePatterns: ['.obsidian/', '.trash/', 'templates/'],
-			});
+			await buildStack(files);
+			fileHasher.excludePatterns = ['.obsidian/', '.trash/', 'templates/'];
 
 			syncClient.sendManifestV2.mockResolvedValue(createDefaultV2Response({
 				sync_session_id: 'session-exclude',

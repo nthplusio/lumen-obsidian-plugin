@@ -6,18 +6,19 @@
  */
 
 // ============================================================================
-// Plugin Settings
+// Plugin Constants
 // ============================================================================
 
-/** Plugin settings persisted to data.json */
+/** Production API URL — baked in, not user-configurable */
+export const LUMEN_API_URL = 'https://app.getlumen.dev';
+
+// ============================================================================
+// Plugin Settings (persisted locally to data.json)
+// ============================================================================
+
+/** Plugin settings persisted to data.json — only locally-owned values */
 export interface LumenSettings {
-	apiUrl: string;
 	apiKey: string;
-	// Sync configuration
-	syncEnabled: boolean;
-	autoSyncInterval: number; // minutes (0 = manual only)
-	eventSyncEnabled: boolean; // sync on idle after vault changes
-	excludePatterns: string[];
 	workspaceId: string;
 	deviceId: string;
 	lastSyncCursor: string;
@@ -27,12 +28,7 @@ export interface LumenSettings {
 }
 
 export const DEFAULT_SETTINGS: LumenSettings = {
-	apiUrl: '',
 	apiKey: '',
-	syncEnabled: false,
-	autoSyncInterval: 5,
-	eventSyncEnabled: true,
-	excludePatterns: ['.obsidian/', '.trash/'],
 	workspaceId: '',
 	deviceId: '',
 	lastSyncCursor: '',
@@ -40,6 +36,27 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 	lastSyncAt: '',
 	debugMode: false,
 };
+
+// ============================================================================
+// Server-Managed Config (fetched from GET /api/workspaces/:id/config)
+// ============================================================================
+
+/** Workspace configuration fetched from the server — not persisted locally */
+export interface WorkspaceConfig {
+	workspace_name: string;
+	workspace_id: string;
+	sync_enabled: boolean;
+	sync_interval_minutes: number;
+	event_sync_enabled: boolean;
+	exclude_patterns: string[];
+	max_file_size_bytes: number;
+	allowed_extensions: string[];
+	indexing_schedule: string;
+	features: {
+		chat_enabled: boolean;
+		deep_research_enabled: boolean;
+	};
+}
 
 // ============================================================================
 // Sync State Machine

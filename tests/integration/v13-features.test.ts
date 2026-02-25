@@ -46,10 +46,6 @@ vi.mock('obsidian', () => ({
 function createSettings(overrides: Partial<LumenSettings> = {}): LumenSettings {
 	return {
 		...DEFAULT_SETTINGS,
-		syncEnabled: true,
-		eventSyncEnabled: true,
-		autoSyncInterval: 5,
-		apiUrl: 'https://app.getlumen.io',
 		apiKey: 'test-key',
 		workspaceId: 'ws-001',
 		deviceId: 'test-device-001',
@@ -272,7 +268,7 @@ describe('v1.3 Feature Integration', () => {
 				dispatchEvent: vi.fn(),
 			});
 
-			settings = createSettings({ eventSyncEnabled: true });
+			settings = createSettings();
 			vault = createMockVault();
 			mockPlugin = createMockPlugin(vault);
 			syncClient = createMockSyncClient();
@@ -286,6 +282,7 @@ describe('v1.3 Feature Integration', () => {
 				fileHasher as any,
 				conflictLogger as any,
 			);
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 		});
 
 		afterEach(() => {
@@ -413,8 +410,6 @@ describe('v1.3 Feature Integration', () => {
 		});
 
 		it('does not trigger sync when eventSyncEnabled is disabled', async () => {
-			settings.eventSyncEnabled = false;
-
 			// Reinitialize with disabled event sync
 			manager.destroy();
 			manager = new SyncManager(
@@ -424,6 +419,7 @@ describe('v1.3 Feature Integration', () => {
 				fileHasher as any,
 				conflictLogger as any,
 			);
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: false });
 			await manager.initialize();
 
 			const modifyCall = vault.on.mock.calls.find(

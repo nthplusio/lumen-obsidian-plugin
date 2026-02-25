@@ -217,10 +217,7 @@ describe('FileHasher', () => {
 		});
 
 		it('respects exclude patterns', async () => {
-			settings = createSettings({
-				excludePatterns: ['.obsidian/', '.trash/', 'templates/'],
-			});
-			hasher = new FileHasher(vault as any, settings);
+			hasher.excludePatterns = ['.obsidian/', '.trash/', 'templates/'];
 
 			const files = [
 				createMockFile('notes/keep.md'),
@@ -243,10 +240,7 @@ describe('FileHasher', () => {
 		});
 
 		it('supports glob wildcards in exclude patterns', async () => {
-			settings = createSettings({
-				excludePatterns: ['*.tmp', 'drafts/??.md'],
-			});
-			hasher = new FileHasher(vault as any, settings);
+			hasher.excludePatterns = ['*.tmp', 'drafts/??.md'];
 
 			const files = [
 				createMockFile('notes/keep.md'),

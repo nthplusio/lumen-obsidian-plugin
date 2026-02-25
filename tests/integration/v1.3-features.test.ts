@@ -499,10 +499,6 @@ describe('Integration: Event-driven sync with idle detection', () => {
 
 		settings = {
 			...DEFAULT_SETTINGS,
-			syncEnabled: true,
-			eventSyncEnabled: true,
-			autoSyncInterval: 5,
-			apiUrl: 'https://app.getlumen.io',
 			apiKey: 'test-key',
 			workspaceId: 'ws-001',
 			deviceId: 'test-device-001',
@@ -575,6 +571,7 @@ describe('Integration: Event-driven sync with idle detection', () => {
 			fileHasher as any,
 			conflictLogger as any,
 		);
+		manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 	});
 
 	afterEach(() => {
@@ -669,8 +666,6 @@ describe('Integration: Event-driven sync with idle detection', () => {
 	});
 
 	it('eventSyncEnabled=false disables visibility-gated sync', async () => {
-		settings.eventSyncEnabled = false;
-
 		manager = new SyncManager(
 			mockPlugin as any,
 			settings,
@@ -678,6 +673,7 @@ describe('Integration: Event-driven sync with idle detection', () => {
 			fileHasher as any,
 			conflictLogger as any,
 		);
+		manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: false });
 
 		await manager.initialize();
 

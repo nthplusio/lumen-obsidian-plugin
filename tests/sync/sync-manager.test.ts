@@ -36,9 +36,6 @@ vi.mock('obsidian', () => ({
 function createSettings(overrides: Partial<LumenSettings> = {}): LumenSettings {
 	return {
 		...DEFAULT_SETTINGS,
-		syncEnabled: true,
-		autoSyncInterval: 5,
-		apiUrl: 'https://app.getlumen.io',
 		apiKey: 'test-key',
 		workspaceId: 'ws-001',
 		deviceId: 'test-device-001',
@@ -783,7 +780,7 @@ describe('SyncManager', () => {
 		});
 
 		it('registers visibilitychange handler when eventSyncEnabled is true', async () => {
-			settings.eventSyncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 
 			await manager.initialize();
 
@@ -794,7 +791,7 @@ describe('SyncManager', () => {
 		});
 
 		it('does not register visibilitychange handler when eventSyncEnabled is false', async () => {
-			settings.eventSyncEnabled = false;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: false });
 
 			await manager.initialize();
 
@@ -805,7 +802,7 @@ describe('SyncManager', () => {
 		});
 
 		it('defers debounce when document is hidden', async () => {
-			settings.eventSyncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 			mockDocument.hidden = true;
 			await manager.initialize();
 
@@ -824,7 +821,7 @@ describe('SyncManager', () => {
 		});
 
 		it('resumes deferred sync when document becomes visible', async () => {
-			settings.eventSyncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 			mockDocument.hidden = true;
 			fileHasher.hashAllFiles.mockResolvedValue(new Map());
 			await manager.initialize();
@@ -855,7 +852,7 @@ describe('SyncManager', () => {
 		});
 
 		it('removes visibilitychange handler on destroy', async () => {
-			settings.eventSyncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 
 			await manager.initialize();
 			manager.destroy();
@@ -867,8 +864,7 @@ describe('SyncManager', () => {
 		});
 
 		it('does not schedule debounce when syncEnabled is false', async () => {
-			settings.syncEnabled = false;
-			settings.eventSyncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: false, sync_interval_minutes: 5, event_sync_enabled: true });
 			await manager.initialize();
 
 			const modifyCall = mockPlugin.plugin.app.vault.on.mock.calls.find(
@@ -884,8 +880,7 @@ describe('SyncManager', () => {
 		});
 
 		it('does not schedule debounce when eventSyncEnabled is false', async () => {
-			settings.syncEnabled = true;
-			settings.eventSyncEnabled = false;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: false });
 			await manager.initialize();
 
 			const modifyCall = mockPlugin.plugin.app.vault.on.mock.calls.find(
@@ -901,8 +896,7 @@ describe('SyncManager', () => {
 		});
 
 		it('uses 60-second debounce interval', async () => {
-			settings.eventSyncEnabled = true;
-			settings.syncEnabled = true;
+			manager.applySyncConfig({ sync_enabled: true, sync_interval_minutes: 5, event_sync_enabled: true });
 			mockDocument.hidden = false;
 			fileHasher.hashAllFiles.mockResolvedValue(new Map());
 			await manager.initialize();

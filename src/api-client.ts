@@ -6,22 +6,21 @@
  */
 
 import { requestUrl } from 'obsidian';
-import type { SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
+import type { SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions, WorkspaceConfig } from './types';
 import { LumenHttpClient } from './http-client';
 
 /**
- * REST API client bound to specific credentials.
+ * REST API client bound to an API key.
  *
- * Created once with apiUrl + apiKey, then used to call individual endpoints.
+ * The server URL is baked in (LUMEN_API_URL). Only the API key is configurable.
  */
 export class ApiClient extends LumenHttpClient {
-	constructor(apiUrl: string, apiKey: string) {
-		super(apiUrl, apiKey);
+	constructor(apiKey: string) {
+		super(apiKey);
 	}
 
-	/** Update connection settings (e.g., after settings change) */
-	updateSettings(apiUrl: string, apiKey: string): void {
-		this.apiUrl = apiUrl;
+	/** Update API key (e.g., after settings change) */
+	updateSettings(apiKey: string): void {
 		this.apiKey = apiKey;
 	}
 
@@ -33,6 +32,16 @@ export class ApiClient extends LumenHttpClient {
 			headers: this.headers,
 		});
 		return response.json as ServerStatus;
+	}
+
+	/** Fetch workspace config from the server */
+	async fetchWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig> {
+		const response = await requestUrl({
+			url: `${this.baseUrl}/api/workspaces/${workspaceId}/config`,
+			method: 'GET',
+			headers: this.headers,
+		});
+		return response.json as WorkspaceConfig;
 	}
 
 	/** Semantic search across the vault */
