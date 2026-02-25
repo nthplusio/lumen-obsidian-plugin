@@ -6,6 +6,7 @@
  *   - Message sending flow (user message → streaming → complete)
  *   - Error handling (upgrade, rate limit, general)
  *   - Deep research toggle
+ *   - Active note context
  *   - Cancellation
  */
 
@@ -56,6 +57,31 @@ describe('Chat state types', () => {
 	});
 });
 
+describe('Active note context', () => {
+	it('tracks active note via workspace event', async () => {
+		const { readFileSync } = await import('fs');
+		const content = readFileSync('src/ui/hooks/useChat.ts', 'utf-8');
+		expect(content).toContain('active-leaf-change');
+		expect(content).toContain('getActiveFile');
+	});
+
+	it('includes note context in message when enabled', async () => {
+		const { readFileSync } = await import('fs');
+		const content = readFileSync('src/ui/hooks/useChat.ts', 'utf-8');
+		expect(content).toContain('activeNoteRef');
+		expect(content).toContain('[Context: active note is');
+	});
+
+	it('has toggle action and state', async () => {
+		const { readFileSync } = await import('fs');
+		const content = readFileSync('src/ui/hooks/useChat.ts', 'utf-8');
+		expect(content).toContain("'TOGGLE_ACTIVE_NOTE_CONTEXT'");
+		expect(content).toContain("'SET_ACTIVE_NOTE'");
+		expect(content).toContain('activeNoteContextEnabled');
+		expect(content).toContain('activeNotePath');
+	});
+});
+
 describe('Chat reducer actions', () => {
 	it('defines all required action types', async () => {
 		const { readFileSync } = await import('fs');
@@ -77,6 +103,8 @@ describe('Chat reducer actions', () => {
 			'SET_CONVERSATION_DROPDOWN',
 			'SET_CONVERSATIONS',
 			'SET_CONVERSATIONS_LOADING',
+			'TOGGLE_ACTIVE_NOTE_CONTEXT',
+			'SET_ACTIVE_NOTE',
 		];
 		for (const action of actions) {
 			expect(content).toContain(`'${action}'`);

@@ -1,28 +1,74 @@
 /**
  * LumenApp — Root component for the Lumen sidebar.
  *
- * Provides PluginContext and renders TabBar + the active view
- * (SearchView or ChatView). Only the active view is mounted.
+ * Shows OnboardingView when no API key is configured.
+ * Otherwise renders TabBar + the active view (SearchView or ChatView).
+ *
+ * Exposes an imperative API via ref for command-driven actions
+ * (focus search, switch tabs, new chat).
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useState, forwardRef } from 'react';
 import type { PluginContextValue } from './contexts/PluginContext';
 import { PluginProvider } from './contexts/PluginContext';
 import { TabBar, type ViewMode } from './components/TabBar';
 import { SearchView } from './components/search/SearchView';
 import { ChatView } from './components/chat/ChatView';
+import { OnboardingView } from './components/onboarding/OnboardingView';
+
+/** Imperative API exposed via ref for keyboard shortcuts and commands. */
+export interface LumenAppHandle {
+	setMode: (mode: ViewMode) => void;
+	focusSearch: () => void;
+}
 
 interface LumenAppProps {
 	context: PluginContextValue;
 }
 
-export function LumenApp({ context }: LumenAppProps) {
-	const [activeMode, setActiveMode] = useState<ViewMode>('search');
+export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
+	function LumenApp({ context }, ref) {
+		const [activeMode, setActiveMode] = useState<ViewMode>('search');
+		const [configured, setConfigured] = useState(!!context.plugin.settings.apiKey);
 
-	return (
-		<PluginProvider value={context}>
-			<TabBar activeMode={activeMode} onModeChange={setActiveMode} />
-			{activeMode === 'search' ? <SearchView /> : <ChatView />}
-		</PluginProvider>
-	);
-}
+		// Listen for settings changes (e.g., onboarding completes)
+		useEffect(() => {
+			const check = () => setConfigured(!!context.plugin.settings.apiKey);
+			// Poll settings at a low frequency to detect changes from onboarding
+			const interval = setInterval(check, 500);
+			return () => clearInterval(interval);
+		}, [context.plugin]);
+
+		// Expose imperative handle for commands
+		useImperativeHandle(ref, () => ({
+			setMode: (mode: ViewMode) => setActiveMode(mode),
+			focusSearch: () => {
+				setActiveMode('search');
+				// Focus the search input after React re-renders
+				requestAnimationFrame(() => {
+					const input = document.querySelector('.lumen-search-input') as HTMLInputElement;
+					input?.focus();
+				});
+			},
+		}), []);
+
+		const handleModeChange = useCallback((mode: ViewMode) => {
+			setActiveMode(mode);
+		}, []);
+
+		if (!configured) {
+			return (
+				<PluginProvider value={context}>
+					<OnboardingView />
+				</PluginProvider>
+			);
+		}
+
+		return (
+			<PluginProvider value={context}>
+				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
+				{activeMode === 'search' ? <SearchView /> : <ChatView />}
+			</PluginProvider>
+		);
+	},
+);

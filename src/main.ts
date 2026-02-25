@@ -14,6 +14,7 @@ import { LumenHelpModal } from './help-modal';
 import { LumenDebugLogView, VIEW_TYPE_LUMEN_DEBUG_LOG } from './debug-log-view';
 import { LumenSettingTab } from './settings-tab';
 import { SimilarNotesModal } from './similar-notes-modal';
+import { QuickSearchModal } from './quick-search-modal';
 import { createLumenAPI, type LumenSearchAPI } from './dataview-api';
 import { SyncManager } from './sync/sync-manager';
 import { SyncClient } from './sync/sync-client';
@@ -155,6 +156,66 @@ export default class LumenPlugin extends Plugin {
 			name: 'Open Debug Log',
 			callback: () => {
 				this.activateDebugLogView();
+			},
+		});
+
+		// Quick search modal (Ctrl/Cmd+Shift+L)
+		this.addCommand({
+			id: 'quick-search',
+			name: 'Quick search',
+			callback: () => {
+				new QuickSearchModal(this).open();
+			},
+		});
+
+		// Focus the search input in the sidebar
+		this.addCommand({
+			id: 'focus-search',
+			name: 'Focus search input',
+			callback: () => {
+				this.activateMainView().then(() => {
+					const view = this.getMainView();
+					view?.appRef.current?.focusSearch();
+				});
+			},
+		});
+
+		// Switch to chat tab
+		this.addCommand({
+			id: 'open-chat',
+			name: 'Open chat',
+			callback: () => {
+				this.activateMainView().then(() => {
+					const view = this.getMainView();
+					view?.appRef.current?.setMode('chat');
+				});
+			},
+		});
+
+		// New chat conversation
+		this.addCommand({
+			id: 'new-chat',
+			name: 'New chat',
+			callback: () => {
+				this.activateMainView().then(() => {
+					const view = this.getMainView();
+					view?.appRef.current?.setMode('chat');
+				});
+			},
+		});
+
+		// Toggle between search and chat
+		this.addCommand({
+			id: 'toggle-mode',
+			name: 'Toggle search / chat',
+			callback: () => {
+				this.activateMainView().then(() => {
+					const view = this.getMainView();
+					if (!view?.appRef.current) return;
+					// Read the current mode from the DOM to determine toggle direction
+					const hasChat = document.querySelector('.lumen-chat-view');
+					view.appRef.current.setMode(hasChat ? 'search' : 'chat');
+				});
 			},
 		});
 
@@ -470,6 +531,15 @@ export default class LumenPlugin extends Plugin {
 			clearInterval(this.backgroundPollTimer);
 			this.backgroundPollTimer = null;
 		}
+	}
+
+	/** Get the main view instance if it exists */
+	private getMainView(): LumenMainView | null {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LUMEN_MAIN);
+		if (leaves.length > 0) {
+			return leaves[0]!.view as LumenMainView;
+		}
+		return null;
 	}
 
 	/** Activate the main sidebar view, creating it if needed */

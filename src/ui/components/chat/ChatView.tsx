@@ -49,10 +49,13 @@ export function ChatView() {
 				status={state.status}
 				canDeepResearch={state.canDeepResearch}
 				deepResearchEnabled={state.deepResearchEnabled}
+				activeNoteContextEnabled={state.activeNoteContextEnabled}
+				activeNotePath={state.activeNotePath}
 				rateLimitResetsAt={state.rateLimitResetsAt}
 				onSend={chat.sendMessage}
 				onCancel={chat.cancelMessage}
 				onToggleDeepResearch={chat.toggleDeepResearch}
+				onToggleActiveNoteContext={chat.toggleActiveNoteContext}
 				onDismissRateLimit={chat.dismissRateLimit}
 			/>
 		</div>
@@ -362,10 +365,13 @@ interface ChatInputAreaProps {
 	status: 'idle' | 'sending' | 'streaming';
 	canDeepResearch: boolean;
 	deepResearchEnabled: boolean;
+	activeNoteContextEnabled: boolean;
+	activeNotePath: string | null;
 	rateLimitResetsAt: string | null;
 	onSend: (content: string) => Promise<void>;
 	onCancel: () => void;
 	onToggleDeepResearch: () => void;
+	onToggleActiveNoteContext: () => void;
 	onDismissRateLimit: () => void;
 }
 
@@ -373,10 +379,13 @@ function ChatInputArea({
 	status,
 	canDeepResearch,
 	deepResearchEnabled,
+	activeNoteContextEnabled,
+	activeNotePath,
 	rateLimitResetsAt,
 	onSend,
 	onCancel,
 	onToggleDeepResearch,
+	onToggleActiveNoteContext,
 	onDismissRateLimit,
 }: ChatInputAreaProps) {
 	const [input, setInput] = useState('');
@@ -414,12 +423,22 @@ function ChatInputArea({
 		}
 	}, []);
 
+	const noteIconRef = useRef<HTMLButtonElement>(null);
+
+	useEffect(() => {
+		if (noteIconRef.current) setIcon(noteIconRef.current, 'file-text');
+	}, []);
+
 	const isBusy = status !== 'idle';
+	const activeFileName = activeNotePath?.split('/').pop()?.replace(/\.md$/, '') ?? null;
 
 	return (
 		<div className="lumen-chat-input-area">
 			{rateLimitResetsAt && (
 				<RateLimitBanner resetsAt={rateLimitResetsAt} onDismiss={onDismissRateLimit} />
+			)}
+			{activeNoteContextEnabled && activeFileName && (
+				<ActiveNoteBar fileName={activeFileName} onDisable={onToggleActiveNoteContext} />
 			)}
 			<div className="lumen-chat-input-row">
 				<textarea
@@ -431,6 +450,16 @@ function ChatInputArea({
 					onChange={handleInput}
 					onKeyDown={handleKeyDown}
 				/>
+				{activeNotePath && (
+					<button
+						className={`lumen-chat-note-context-toggle ${activeNoteContextEnabled ? 'is-active' : ''}`}
+						aria-label={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
+						aria-pressed={activeNoteContextEnabled}
+						onClick={onToggleActiveNoteContext}
+						ref={noteIconRef}
+						title={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
+					/>
+				)}
 				{canDeepResearch && (
 					<button
 						className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
@@ -475,6 +504,31 @@ function TurnsInfoBadge({ turnsUsed, turnsRemaining }: { turnsUsed: number; turn
 			<span>
 				Deep Research &middot; {turnsUsed} turn{turnsUsed !== 1 ? 's' : ''} used &middot; {turnsRemaining} remaining
 			</span>
+		</div>
+	);
+}
+
+// --- ActiveNoteBar ---
+
+function ActiveNoteBar({ fileName, onDisable }: { fileName: string; onDisable: () => void }) {
+	const fileRef = useRef<HTMLSpanElement>(null);
+	const xRef2 = useRef<HTMLButtonElement>(null);
+
+	useEffect(() => {
+		if (fileRef.current) setIcon(fileRef.current, 'file-text');
+		if (xRef2.current) setIcon(xRef2.current, 'x');
+	}, []);
+
+	return (
+		<div className="lumen-chat-note-context-bar">
+			<span className="lumen-chat-note-context-icon" ref={fileRef} />
+			<span className="lumen-chat-note-context-name">{fileName}</span>
+			<button
+				className="lumen-chat-note-context-dismiss"
+				aria-label="Remove note context"
+				ref={xRef2}
+				onClick={onDisable}
+			/>
 		</div>
 	);
 }

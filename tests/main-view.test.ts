@@ -131,6 +131,13 @@ describe('LumenMainView', () => {
 		});
 	});
 
+	describe('imperative ref', () => {
+		it('exposes an appRef for command access', () => {
+			expect(view.appRef).toBeDefined();
+			expect(view.appRef.current).toBeNull(); // null before onOpen
+		});
+	});
+
 	describe('onClose', () => {
 		it('unmounts the React root', async () => {
 			await view.onOpen();

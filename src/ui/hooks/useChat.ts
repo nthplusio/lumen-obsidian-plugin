@@ -5,7 +5,7 @@
  * deep research toggle, rate limiting, and message state.
  */
 
-import { useCallback, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { ChatMessage, ChatSource, ConversationSummary } from '../../types';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from '../../types';
 import { logger } from '../../utils/logger';
@@ -25,6 +25,9 @@ interface ChatState {
 	conversationTitle: string | null;
 	deepResearchEnabled: boolean;
 	canDeepResearch: boolean;
+	/** Active note context — when enabled, includes the current note in chat messages */
+	activeNoteContextEnabled: boolean;
+	activeNotePath: string | null;
 	streamContent: string;
 	error: string | null;
 	upgradeMessage: string | null;
@@ -52,7 +55,9 @@ type ChatAction =
 	| { type: 'SET_CAN_DEEP_RESEARCH'; can: boolean }
 	| { type: 'SET_CONVERSATION_DROPDOWN'; open: boolean }
 	| { type: 'SET_CONVERSATIONS'; conversations: ConversationSummary[]; loading: boolean }
-	| { type: 'SET_CONVERSATIONS_LOADING' };
+	| { type: 'SET_CONVERSATIONS_LOADING' }
+	| { type: 'TOGGLE_ACTIVE_NOTE_CONTEXT' }
+	| { type: 'SET_ACTIVE_NOTE'; path: string | null };
 
 const initialState: ChatState = {
 	messages: [],
@@ -61,6 +66,8 @@ const initialState: ChatState = {
 	conversationTitle: null,
 	deepResearchEnabled: false,
 	canDeepResearch: false,
+	activeNoteContextEnabled: false,
+	activeNotePath: null,
 	streamContent: '',
 	error: null,
 	upgradeMessage: null,
@@ -155,6 +162,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			return { ...state, conversations: action.conversations, conversationsLoading: action.loading };
 		case 'SET_CONVERSATIONS_LOADING':
 			return { ...state, conversationsLoading: true };
+		case 'TOGGLE_ACTIVE_NOTE_CONTEXT':
+			return { ...state, activeNoteContextEnabled: !state.activeNoteContextEnabled };
+		case 'SET_ACTIVE_NOTE':
+			return { ...state, activeNotePath: action.path };
 	}
 }
 
@@ -166,22 +177,36 @@ export interface UseChatReturn {
 	deleteConversation: () => Promise<void>;
 	switchConversation: (id: string, title: string | null) => void;
 	toggleDeepResearch: () => void;
+	toggleActiveNoteContext: () => void;
 	toggleConversationDropdown: () => void;
 	dismissRateLimit: () => void;
 	refreshPlanGating: () => Promise<void>;
 }
 
 export function useChat(): UseChatReturn {
-	const { plugin } = usePlugin();
+	const { plugin, app } = usePlugin();
 	const [state, dispatch] = useReducer(chatReducer, initialState);
 	const abortRef = useRef<AbortController | null>(null);
 	// Use refs for values accessed in streaming callback to avoid stale closures
 	const conversationIdRef = useRef<string | null>(null);
 	const deepResearchRef = useRef(false);
+	const activeNoteRef = useRef<{ enabled: boolean; path: string | null }>({ enabled: false, path: null });
 
 	// Keep refs in sync with state
 	conversationIdRef.current = state.conversationId;
 	deepResearchRef.current = state.deepResearchEnabled;
+	activeNoteRef.current = { enabled: state.activeNoteContextEnabled, path: state.activeNotePath };
+
+	// Track active file changes
+	useEffect(() => {
+		const updateActiveNote = () => {
+			const file = app.workspace.getActiveFile();
+			dispatch({ type: 'SET_ACTIVE_NOTE', path: file?.path ?? null });
+		};
+		updateActiveNote();
+		const ref = app.workspace.on('active-leaf-change', updateActiveNote);
+		return () => app.workspace.offref(ref);
+	}, [app]);
 
 	const sendMessage = useCallback(async (content: string) => {
 		const chatClient = plugin.chatClient;
@@ -194,7 +219,14 @@ export function useChat(): UseChatReturn {
 		let streamedContent = '';
 		let firstToken = true;
 
-		logger.info(`Chat: sending message (${content.length} chars, deep_research: ${deepResearchRef.current})`);
+		// Build message with optional active note context
+		let messageToSend = content;
+		const noteCtx = activeNoteRef.current;
+		if (noteCtx.enabled && noteCtx.path) {
+			messageToSend = `[Context: active note is "${noteCtx.path}"]\n\n${content}`;
+		}
+
+		logger.info(`Chat: sending message (${content.length} chars, deep_research: ${deepResearchRef.current}, note_context: ${noteCtx.enabled ? noteCtx.path : 'off'})`);
 
 		try {
 			// Create conversation lazily
@@ -205,7 +237,7 @@ export function useChat(): UseChatReturn {
 				dispatch({ type: 'SET_CONVERSATION', id: convId, title: null });
 			}
 
-			const response = await chatClient.sendMessage(convId, content, {
+			const response = await chatClient.sendMessage(convId, messageToSend, {
 				deepResearch: deepResearchRef.current,
 				signal: abortRef.current.signal,
 				onToken: (token) => {
@@ -283,6 +315,10 @@ export function useChat(): UseChatReturn {
 		dispatch({ type: 'TOGGLE_DEEP_RESEARCH' });
 	}, []);
 
+	const toggleActiveNoteContext = useCallback(() => {
+		dispatch({ type: 'TOGGLE_ACTIVE_NOTE_CONTEXT' });
+	}, []);
+
 	const toggleConversationDropdown = useCallback(async () => {
 		const newOpen = !state.conversationDropdownOpen;
 		dispatch({ type: 'SET_CONVERSATION_DROPDOWN', open: newOpen });
@@ -324,6 +360,7 @@ export function useChat(): UseChatReturn {
 		deleteConversation,
 		switchConversation,
 		toggleDeepResearch,
+		toggleActiveNoteContext,
 		toggleConversationDropdown,
 		dismissRateLimit,
 		refreshPlanGating,
