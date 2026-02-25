@@ -834,17 +834,24 @@ describe('LumenMainView', () => {
 			expect(errorState).toBeDefined();
 		});
 
-		it('shows server error for ENOTFOUND (not retryable)', async () => {
+		it('shows server error for ENOTFOUND (retryable — retries up to MAX_RETRIES)', async () => {
 			const searchFn = vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
 			const { view, contentEl } = buildView({ searchFn });
 			await view.onOpen();
 
-			await executeSearchDirectly(view, 'test');
+			vi.useFakeTimers();
+			const promise = executeSearchDirectly(view, 'test');
+			// Advance past all retry delays (3 retries with backoff)
+			for (let i = 0; i < 5; i++) {
+				await vi.advanceTimersByTimeAsync(5000);
+			}
+			await promise;
+			vi.useRealTimers();
 
 			const title = findFirstByClass(contentEl, 'lumen-error-title');
 			expect(title?.textContent).toBe('Connection Error');
-			// ENOTFOUND is not retryable — should not retry
-			expect(searchFn).toHaveBeenCalledTimes(1);
+			// ENOTFOUND is now retryable — retries MAX_RETRIES (2) times = 3 total calls
+			expect(searchFn).toHaveBeenCalledTimes(3);
 		});
 	});
 

@@ -32,6 +32,7 @@ import { logger } from '../utils/logger';
 import { isExcludedByPatterns } from '../utils/exclude-pattern';
 import { isSafePath } from '../utils/path-safety';
 import { TEXT_EXTENSIONS, UPLOAD_BATCH_SIZE, BATCH_MAX_RETRIES, BATCH_RETRY_BASE_MS, NOTICE_DURATION_ERROR_MS } from './constants';
+import { networkStatus } from '../utils/network-status';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,6 +79,9 @@ export class SyncManager {
 	// Batch upload timing for ETA calculation
 	private batchDurations: number[] = [];
 
+	// Cancellation
+	private syncAbortController: AbortController | null = null;
+
 	// Sync config (set from server-managed WorkspaceConfig)
 	private syncEnabled = true;
 	private autoSyncIntervalMinutes = 5;
@@ -86,6 +90,9 @@ export class SyncManager {
 	// Cached sync config from server
 	private currentExcludePatterns: string[] = ['.obsidian/', '.trash/'];
 	private currentMaxFileSize: number = 50 * 1024 * 1024;
+
+	// Network status
+	private networkUnsubscribe: (() => void) | null = null;
 
 	// Idle detection
 	private visibilityHandler: (() => void) | null = null;
@@ -125,6 +132,14 @@ export class SyncManager {
 			this.registerVisibilityHandler();
 		}
 
+		// Subscribe to network status — auto-sync when coming back online
+		this.networkUnsubscribe = networkStatus.onChange((online) => {
+			if (online && !this.syncInProgress && (this.pendingChanges.size > 0 || this.deletedPaths.size > 0)) {
+				logger.info('Network restored — scheduling deferred sync');
+				this.scheduleDebounce();
+			}
+		});
+
 		logger.info('SyncManager initialized');
 	}
 
@@ -142,6 +157,20 @@ export class SyncManager {
 	async syncNow(): Promise<SyncResult> {
 		this.clearDebounce();
 		return this.executeSync(true);
+	}
+
+	/**
+	 * Cancel an in-progress sync.
+	 * Aborts pending HTTP requests and resets state to idle.
+	 */
+	cancelSync(): void {
+		if (this.syncAbortController) {
+			this.syncAbortController.abort();
+			this.syncAbortController = null;
+		}
+		this.syncInProgress = false;
+		this.setState('cancelled');
+		logger.info('Sync cancelled by user');
 	}
 
 	/** Enable debounce-based auto-sync on vault changes. */
@@ -194,6 +223,14 @@ export class SyncManager {
 		this.clearDebounce();
 		this.stopAutoSync();
 		this.removeVisibilityHandler();
+		if (this.networkUnsubscribe) {
+			this.networkUnsubscribe();
+			this.networkUnsubscribe = null;
+		}
+		if (this.syncAbortController) {
+			this.syncAbortController.abort();
+			this.syncAbortController = null;
+		}
 		if (this.successTimer !== null) {
 			window.clearTimeout(this.successTimer);
 			this.successTimer = null;
@@ -214,6 +251,20 @@ export class SyncManager {
 		manual: boolean,
 		retryCount = 0,
 	): Promise<SyncResult> {
+		// Skip sync when offline
+		if (!networkStatus.online) {
+			logger.info('Offline — sync deferred');
+			this.setState('offline');
+			return {
+				success: false,
+				filesUploaded: 0,
+				filesDownloaded: 0,
+				filesDeleted: 0,
+				errors: ['Offline — sync deferred'],
+				duration: 0,
+			};
+		}
+
 		if (this.syncInProgress) {
 			logger.debug('Sync already in progress, skipping');
 			return {
@@ -227,6 +278,8 @@ export class SyncManager {
 		}
 
 		this.syncInProgress = true;
+		this.syncAbortController = new AbortController();
+		const signal = this.syncAbortController.signal;
 		const startTime = Date.now();
 
 		try {
@@ -307,11 +360,17 @@ export class SyncManager {
 
 			// Always send manifest — even empty manifests discover server changes
 
+			// Check for cancellation before manifest exchange
+			if (signal.aborted) {
+				return this.cancelledResult(startTime);
+			}
+
 			const manifestResponse = await this.syncClient.sendManifestV2(
 				entries,
 				this.settings.deviceId,
 				this.settings.lastSyncSeq,
 				this.settings.lastSyncCursor || undefined,
+				signal,
 			);
 
 			const serverChanges = manifestResponse.server_changes ?? [];
@@ -344,11 +403,17 @@ export class SyncManager {
 
 					const batchStartTime = Date.now();
 
+					// Check for cancellation before each batch
+					if (signal.aborted) {
+						return this.cancelledResult(startTime);
+					}
+
 					const uploadResponse = await this.uploadBatchWithRetry(
 						manifestResponse.sync_session_id,
 						batchPaths,
 						batchIdx,
 						isLastBatch,
+						signal,
 					);
 
 					const batchMs = Date.now() - batchStartTime;
@@ -455,12 +520,28 @@ export class SyncManager {
 			this.notifySyncComplete(result);
 			return result;
 		} catch (error) {
+			// Handle cancellation cleanly — not an error
+			if (error instanceof Error && error.name === 'AbortError') {
+				return this.cancelledResult(startTime);
+			}
+
 			const classified = classifyError(error);
 			const duration = Date.now() - startTime;
 
-			// Retry transient errors with exponential backoff
+			// 410 Gone — sync session expired. Reset cursor+seq and auto-restart.
+			if (classified.statusCode === 410) {
+				logger.warn('410 Gone — resetting sync state and restarting');
+				this.settings.lastSyncCursor = '';
+				this.settings.lastSyncSeq = 0;
+				this.syncInProgress = false;
+				return this.executeSync(manual, 0);
+			}
+
+			// Retry transient errors with exponential backoff + jitter
 			if (classified.retryable && retryCount < MAX_RETRIES) {
-				const delayMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
+				const baseMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
+				const jitter = Math.floor(Math.random() * baseMs * 0.5); // 0-50% jitter
+				const delayMs = baseMs + jitter;
 				logger.warn(
 					`Retryable error (attempt ${retryCount + 1}/${MAX_RETRIES}), ` +
 					`retrying in ${delayMs}ms: ${classified.message}`,
@@ -490,6 +571,7 @@ export class SyncManager {
 			this.notifySyncComplete(result);
 			return result;
 		} finally {
+			this.syncAbortController = null;
 			this.syncInProgress = false;
 		}
 	}
@@ -550,6 +632,7 @@ export class SyncManager {
 						v2Response.sync_session_id,
 						batch,
 						v2Response.download_endpoint,
+						this.syncAbortController?.signal,
 					);
 
 					for (const file of response.files) {
@@ -882,18 +965,25 @@ export class SyncManager {
 		batchPaths: string[],
 		batchIndex: number,
 		isLastBatch: boolean,
+		signal?: AbortSignal,
 		retryCount = 0,
 	): Promise<SyncUploadResponse> {
 		try {
 			const batchContents = await this.readFileBatch(batchPaths);
-			return await this.syncClient.uploadFiles(sessionId, batchContents, batchIndex, isLastBatch);
+			return await this.syncClient.uploadFiles(sessionId, batchContents, batchIndex, isLastBatch, signal);
 		} catch (error) {
+			// Don't retry if cancelled
+			if (error instanceof Error && error.name === 'AbortError') {
+				throw error;
+			}
 			const classified = classifyError(error);
 			if (classified.retryable && retryCount < BATCH_MAX_RETRIES) {
-				const delayMs = BATCH_RETRY_BASE_MS * Math.pow(2, retryCount);
+				const baseMs = BATCH_RETRY_BASE_MS * Math.pow(2, retryCount);
+				const jitter = Math.floor(Math.random() * baseMs * 0.5);
+				const delayMs = baseMs + jitter;
 				logger.warn(`Batch ${batchIndex} failed (attempt ${retryCount + 1}/${BATCH_MAX_RETRIES}), retrying in ${delayMs}ms`);
 				await new Promise(resolve => setTimeout(resolve, delayMs));
-				return this.uploadBatchWithRetry(sessionId, batchPaths, batchIndex, isLastBatch, retryCount + 1);
+				return this.uploadBatchWithRetry(sessionId, batchPaths, batchIndex, isLastBatch, signal, retryCount + 1);
 			}
 			throw error;
 		}
@@ -912,6 +1002,23 @@ export class SyncManager {
 				// Don't let callback errors break the sync flow
 			}
 		}
+	}
+
+	/** Return a clean "cancelled" result (not an error). */
+	private cancelledResult(startTime: number): SyncResult {
+		const duration = Date.now() - startTime;
+		logger.info(`Sync cancelled after ${duration}ms`);
+		this.setState('cancelled');
+		const result: SyncResult = {
+			success: false,
+			filesUploaded: 0,
+			filesDownloaded: 0,
+			filesDeleted: 0,
+			errors: ['Sync cancelled'],
+			duration,
+		};
+		this.notifySyncComplete(result);
+		return result;
 	}
 
 	private finishSuccess(): void {

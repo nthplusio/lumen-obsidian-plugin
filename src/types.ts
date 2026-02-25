@@ -63,7 +63,7 @@ export interface WorkspaceConfig {
 // ============================================================================
 
 /** Sync engine states */
-export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'downloading' | 'success' | 'error';
+export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'downloading' | 'success' | 'error' | 'offline' | 'cancelled';
 
 /** Result returned after a sync completes (or fails) */
 export interface SyncResult {

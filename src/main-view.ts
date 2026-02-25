@@ -56,6 +56,7 @@ export class LumenMainView extends ItemView {
 	private chatEmptyState: HTMLElement | null = null;
 	private isChatSending = false;
 	private chatCancelled = false;
+	private chatAbortController: AbortController | null = null;
 
 	// Conversation state
 	private conversationId: string | null = null;
@@ -559,9 +560,11 @@ export class LumenMainView extends ItemView {
 		return date.toLocaleDateString();
 	}
 
-	/** Cancel ongoing chat request */
+	/** Cancel ongoing chat request by aborting the fetch stream. */
 	private cancelChat(): void {
 		this.chatCancelled = true;
+		this.chatAbortController?.abort();
+		this.chatAbortController = null;
 	}
 
 	private showChatEmptyState(): void {
@@ -637,6 +640,7 @@ export class LumenMainView extends ItemView {
 
 		this.isChatSending = true;
 		this.chatCancelled = false;
+		this.chatAbortController = new AbortController();
 		let firstToken = true;
 		let streamedContent = '';
 		let rafPending = false;
@@ -655,6 +659,7 @@ export class LumenMainView extends ItemView {
 				message,
 				{
 					deepResearch: this.deepResearchEnabled,
+					signal: this.chatAbortController.signal,
 					onToken: (token) => {
 						if (this.chatCancelled) return;
 						if (firstToken) {
@@ -729,6 +734,22 @@ export class LumenMainView extends ItemView {
 			}
 		} catch (err) {
 			if (firstToken) loadingEl.remove();
+
+			// Handle user-initiated cancellation (AbortError)
+			if (err instanceof Error && err.name === 'AbortError') {
+				contentEl.empty();
+				if (streamedContent) {
+					// Show partial content that was already streamed
+					contentEl.textContent = streamedContent;
+				} else {
+					contentEl.createEl('p', {
+						text: 'Message cancelled.',
+						cls: 'lumen-chat-cancelled-text',
+					});
+				}
+				return;
+			}
+
 			bubble.remove();
 
 			if (err instanceof PlanUpgradeRequiredError) {
@@ -748,6 +769,7 @@ export class LumenMainView extends ItemView {
 		} finally {
 			this.isChatSending = false;
 			this.chatCancelled = false;
+			this.chatAbortController = null;
 			// Restore send/stop button state
 			this.chatSendButton?.removeClass('lumen-view-hidden');
 			this.chatStopButton?.addClass('lumen-view-hidden');

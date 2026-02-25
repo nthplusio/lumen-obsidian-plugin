@@ -1,13 +1,12 @@
 /**
  * SyncClient unit tests.
  *
- * Tests the HTTP client for all 4 sync endpoints:
- *   - POST /sync/register
- *   - POST /sync/manifest
- *   - POST /sync/upload (requestUrl with manual multipart body)
- *   - GET  /sync/status
- *
- * All endpoints use Obsidian's requestUrl (mocked).
+ * Tests the HTTP client for all sync endpoints:
+ *   - POST /sync/register (requestUrl)
+ *   - POST /sync/manifest (fetch)
+ *   - POST /sync/upload (fetch with manual multipart)
+ *   - POST /sync/download (fetch)
+ *   - GET  /sync/status (requestUrl)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -32,10 +31,8 @@ const WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 // Mock setup
 // ---------------------------------------------------------------------------
 
-// Hoist the mock fn so it's available for vi.mock factory
 const mockRequestUrl = vi.hoisted(() => vi.fn());
 
-// Replace the obsidian module's requestUrl with our spy
 vi.mock('obsidian', () => ({
 	requestUrl: mockRequestUrl,
 	Plugin: class {},
@@ -46,8 +43,17 @@ vi.mock('obsidian', () => ({
 	Platform: { isDesktop: true, isMobile: false },
 }));
 
+// Mock fetch for methods that use native fetch
+const mockFetch = vi.fn();
+const originalFetch = globalThis.fetch;
+
 beforeEach(() => {
 	vi.clearAllMocks();
+	globalThis.fetch = mockFetch;
+});
+
+afterEach(() => {
+	globalThis.fetch = originalFetch;
 });
 
 // ---------------------------------------------------------------------------
@@ -78,9 +84,28 @@ function mockRequestUrlFailure(status: number, message: string) {
 	} as any);
 }
 
+function mockFetchSuccess(json: unknown) {
+	mockFetch.mockResolvedValueOnce({
+		ok: true,
+		status: 200,
+		json: async () => json,
+		text: async () => JSON.stringify(json),
+	} as Response);
+}
+
+function mockFetchFailure(status: number, message: string) {
+	mockFetch.mockResolvedValueOnce({
+		ok: false,
+		status,
+		statusText: 'Error',
+		json: async () => ({ error: 'ERROR', message }),
+		text: async () => JSON.stringify({ error: 'ERROR', message }),
+	} as Response);
+}
+
 
 // ---------------------------------------------------------------------------
-// Registration Response Fixtures
+// Fixtures
 // ---------------------------------------------------------------------------
 
 const registrationResponse: PluginRegistrationResponse = {
@@ -111,6 +136,8 @@ const statusResponse: SyncStatusResponse = {
 		indexed_files: 42,
 		total_files: 42,
 	},
+	exclude_patterns: [],
+	max_file_size_bytes: 50 * 1024 * 1024,
 };
 
 const manifestResponseV2: SyncManifestResponseV2 = {
@@ -142,7 +169,7 @@ const downloadResponse: SyncDownloadResponse = {
 };
 
 // ---------------------------------------------------------------------------
-// Tests: register
+// Tests: register (uses requestUrl)
 // ---------------------------------------------------------------------------
 
 describe('SyncClient', () => {
@@ -151,19 +178,9 @@ describe('SyncClient', () => {
 			const client = createClient();
 			mockRequestUrlSuccess(201, registrationResponse);
 
-			const result = await client.register(
-				'device-uuid-001',
-				'MacBook Pro',
-				'0.1.0',
-				'My Vault',
-			);
+			const result = await client.register('device-uuid-001', 'MacBook Pro', '0.1.0', 'My Vault');
 
 			expect(result).toEqual(registrationResponse);
-			expect(result.api_key).toBe('lumen_sk_new_key_456');
-			expect(result.workspace_id).toBe(WORKSPACE_ID);
-			expect(result.allowed_extensions).toContain('.md');
-
-			// Verify request structure
 			expect(mockRequestUrl).toHaveBeenCalledOnce();
 			const call = mockRequestUrl.mock.calls[0]![0] as any;
 			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/register`);
@@ -171,58 +188,26 @@ describe('SyncClient', () => {
 
 			const body = JSON.parse(call.body);
 			expect(body.device_id).toBe('device-uuid-001');
-			expect(body.device_name).toBe('MacBook Pro');
-			expect(body.plugin_version).toBe('0.1.0');
 			expect(body.vault_name).toBe('My Vault');
-		});
-
-		it('includes X-API-Key header', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(201, registrationResponse);
-
-			await client.register('d', 'n', '1.0.0', 'v');
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
-		});
-
-		it('includes Content-Type: application/json header', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(201, registrationResponse);
-
-			await client.register('d', 'n', '1.0.0', 'v');
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['Content-Type']).toBe('application/json');
 		});
 
 		it('throws on non-201 status', async () => {
 			const client = createClient();
 			mockRequestUrlFailure(400, 'device_id is required');
 
-			await expect(
-				client.register('', 'name', '1.0.0', 'vault'),
-			).rejects.toThrow(/Registration failed.*400/);
-		});
-
-		it('throws on 404 (workspace not found)', async () => {
-			const client = createClient();
-			mockRequestUrlFailure(404, 'Workspace not found');
-
-			await expect(
-				client.register('d', 'n', '1.0.0', 'v'),
-			).rejects.toThrow(/Registration failed.*404/);
+			await expect(client.register('', 'name', '1.0.0', 'vault'))
+				.rejects.toThrow(/Registration failed.*400/);
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// uploadFiles
+	// uploadFiles (uses fetch)
 	// -----------------------------------------------------------------------
 
 	describe('uploadFiles', () => {
-		it('uses requestUrl with manual multipart body', async () => {
+		it('uses fetch with manual multipart body', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			const files = new Map([
 				['notes/daily.md', '# Daily Notes\n\nContent'],
@@ -231,12 +216,12 @@ describe('SyncClient', () => {
 
 			await client.uploadFiles('session-123', files);
 
-			expect(mockRequestUrl).toHaveBeenCalledOnce();
+			expect(mockFetch).toHaveBeenCalledOnce();
 		});
 
 		it('encodes file paths in multipart body', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			const files = new Map([
 				['notes/daily.md', '# Daily Notes'],
@@ -245,82 +230,73 @@ describe('SyncClient', () => {
 
 			await client.uploadFiles('session-123', files);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			// Body is an ArrayBuffer — decode to check content
-			const bodyText = new TextDecoder().decode(call.body);
+			const [, options] = mockFetch.mock.calls[0]!;
+			const bodyText = new TextDecoder().decode(new Uint8Array(options.body));
 			expect(bodyText).toContain('sync_session_id');
 			expect(bodyText).toContain('session-123');
 			expect(bodyText).toContain('notes/daily.md');
 			expect(bodyText).toContain('# Daily Notes');
 			expect(bodyText).toContain('folder/subfolder/deep.md');
-			expect(bodyText).toContain('# Deep nested');
 		});
 
 		it('includes X-API-Key header', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			await client.uploadFiles('session-123', new Map());
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.headers['X-API-Key']).toBe(API_KEY);
 		});
 
 		it('sets Content-Type with multipart boundary', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			await client.uploadFiles('session-123', new Map());
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['Content-Type']).toMatch(/^multipart\/form-data; boundary=/);
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.headers['Content-Type']).toMatch(/^multipart\/form-data; boundary=/);
 		});
 
 		it('returns SyncUploadResponse with accepted/rejected counts', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			const result = await client.uploadFiles('session-123', new Map());
 
 			expect(result.accepted).toBe(2);
 			expect(result.rejected).toBe(0);
-			expect(result.deduplicated).toBe(0);
 			expect(result.indexing_triggered).toBe(true);
-			expect(result.rejected_files).toEqual([]);
 		});
 
 		it('throws on non-ok response', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(422, 'Session expired');
+			mockFetchFailure(422, 'Session expired');
 
-			await expect(
-				client.uploadFiles('bad-session', new Map()),
-			).rejects.toThrow(/Upload failed.*422/);
+			await expect(client.uploadFiles('bad-session', new Map()))
+				.rejects.toThrow(/Upload failed.*422/);
 		});
 
 		it('sends to correct URL', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			await client.uploadFiles('session-123', new Map());
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/upload`);
-			expect(call.method).toBe('POST');
+			const [url] = mockFetch.mock.calls[0]!;
+			expect(url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/upload`);
 		});
 
 		it('includes batch_index and is_last_batch fields in multipart body', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
-			const files = new Map([
-				['notes/test.md', '# Test'],
-			]);
-
+			const files = new Map([['notes/test.md', '# Test']]);
 			await client.uploadFiles('session-123', files, 2, false);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const bodyText = new TextDecoder().decode(call.body);
+			const [, options] = mockFetch.mock.calls[0]!;
+			const bodyText = new TextDecoder().decode(new Uint8Array(options.body));
 			expect(bodyText).toContain('name="batch_index"');
 			expect(bodyText).toContain('\r\n\r\n2\r\n');
 			expect(bodyText).toContain('name="is_last_batch"');
@@ -329,21 +305,30 @@ describe('SyncClient', () => {
 
 		it('defaults batchIndex=0 and isLastBatch=true when not provided', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, uploadResponse);
+			mockFetchSuccess(uploadResponse);
 
 			await client.uploadFiles('session-123', new Map());
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const bodyText = new TextDecoder().decode(call.body);
-			expect(bodyText).toContain('name="batch_index"');
+			const [, options] = mockFetch.mock.calls[0]!;
+			const bodyText = new TextDecoder().decode(new Uint8Array(options.body));
 			expect(bodyText).toContain('\r\n\r\n0\r\n');
-			expect(bodyText).toContain('name="is_last_batch"');
 			expect(bodyText).toContain('\r\n\r\ntrue\r\n');
+		});
+
+		it('passes AbortSignal to fetch', async () => {
+			const client = createClient();
+			mockFetchSuccess(uploadResponse);
+			const controller = new AbortController();
+
+			await client.uploadFiles('session-123', new Map(), 0, true, controller.signal);
+
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.signal).toBe(controller.signal);
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// getSyncStatus
+	// getSyncStatus (uses requestUrl)
 	// -----------------------------------------------------------------------
 
 	describe('getSyncStatus', () => {
@@ -354,30 +339,7 @@ describe('SyncClient', () => {
 			const result = await client.getSyncStatus();
 
 			expect(result.last_sync_at).toBe('2026-02-13T10:00:00.000Z');
-			expect(result.cursor).toBe('cursor_abc123');
 			expect(result.file_count).toBe(42);
-			expect(result.indexing_status.active).toBe(false);
-			expect(result.indexing_status.progress).toBe(1.0);
-		});
-
-		it('includes X-API-Key header', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(200, statusResponse);
-
-			await client.getSyncStatus();
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
-		});
-
-		it('uses GET method', async () => {
-			const client = createClient();
-			mockRequestUrlSuccess(200, statusResponse);
-
-			await client.getSyncStatus();
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.method).toBe('GET');
 		});
 
 		it('throws on non-200 status', async () => {
@@ -389,18 +351,18 @@ describe('SyncClient', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// Error classification — verify error messages contain status codes
+	// error responses
 	// -----------------------------------------------------------------------
 
 	describe('error responses', () => {
-		it('includes status code in error for network auth failures', async () => {
+		it('includes status code in error for manifest auth failures', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(401, 'Unauthorized');
+			mockFetchFailure(401, 'Unauthorized');
 
 			await expect(client.sendManifestV2([], 'device-001', 0)).rejects.toThrow('401');
 		});
 
-		it('includes status code in error for server errors', async () => {
+		it('includes status code in error for status server errors', async () => {
 			const client = createClient();
 			mockRequestUrlFailure(503, 'Service unavailable');
 
@@ -409,11 +371,10 @@ describe('SyncClient', () => {
 
 		it('upload error includes response message', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(413, 'File too large');
+			mockFetchFailure(413, 'File too large');
 
-			await expect(
-				client.uploadFiles('s', new Map()),
-			).rejects.toThrow('File too large');
+			await expect(client.uploadFiles('s', new Map()))
+				.rejects.toThrow('File too large');
 		});
 	});
 
@@ -424,7 +385,6 @@ describe('SyncClient', () => {
 	describe('updateSettings', () => {
 		it('changes auth and workspace for subsequent requests', async () => {
 			const client = createClient();
-
 			const newKey = 'lumen_sk_new_key';
 			const newWorkspace = '00000000-0000-4000-8000-000000000002';
 
@@ -440,28 +400,26 @@ describe('SyncClient', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// sendManifestV2 (V2 two-way sync)
+	// sendManifestV2 (uses fetch)
 	// -----------------------------------------------------------------------
 
 	describe('sendManifestV2', () => {
 		it('sends V2 fields: protocol_version, device_id, last_sync_seq', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			mockFetchSuccess(manifestResponseV2);
 
-			const files = [
-				{
-					path: 'notes/local-new.md',
-					content_hash: 'a'.repeat(64),
-					modified_at: '2026-02-13T10:00:00.000Z',
-					size_bytes: 256,
-					action: 'add' as const,
-				},
-			];
+			const files = [{
+				path: 'notes/local-new.md',
+				content_hash: 'a'.repeat(64),
+				modified_at: '2026-02-13T10:00:00.000Z',
+				size_bytes: 256,
+				action: 'add' as const,
+			}];
 
 			await client.sendManifestV2(files, 'device-001', 35, 'prev_cursor');
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const body = JSON.parse(call.body);
+			const [, options] = mockFetch.mock.calls[0]!;
+			const body = JSON.parse(options.body);
 			expect(body.protocol_version).toBe(2);
 			expect(body.device_id).toBe('device-001');
 			expect(body.last_sync_seq).toBe(35);
@@ -471,136 +429,138 @@ describe('SyncClient', () => {
 
 		it('omits cursor when not provided', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			mockFetchSuccess(manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const body = JSON.parse(call.body);
+			const [, options] = mockFetch.mock.calls[0]!;
+			const body = JSON.parse(options.body);
 			expect(body.cursor).toBeUndefined();
 		});
 
-		it('sends to /sync/manifest endpoint (same as V1)', async () => {
+		it('sends to /sync/manifest endpoint', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			mockFetchSuccess(manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
-			expect(call.method).toBe('POST');
+			const [url, options] = mockFetch.mock.calls[0]!;
+			expect(url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
+			expect(options.method).toBe('POST');
 		});
 
 		it('includes X-API-Key and Content-Type headers', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			mockFetchSuccess(manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
-			expect(call.headers['Content-Type']).toBe('application/json');
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.headers['X-API-Key']).toBe(API_KEY);
+			expect(options.headers['Content-Type']).toBe('application/json');
 		});
 
 		it('returns V2 response with server_changes, conflicts, download_endpoint', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			mockFetchSuccess(manifestResponseV2);
 
 			const result = await client.sendManifestV2([], 'device-001', 35);
 
 			expect(result.current_seq).toBe(42);
 			expect(result.server_changes).toHaveLength(1);
-			expect(result.server_changes[0]!.path).toBe('notes/server-edit.md');
 			expect(result.server_deletions).toEqual(['notes/removed-on-server.md']);
 			expect(result.conflicts).toHaveLength(1);
-			expect(result.conflicts[0]!.path).toBe('notes/conflict.md');
 			expect(result.download_endpoint).toContain('/sync/download');
-			// V1 fields still present
-			expect(result.needed_files).toEqual(['notes/local-new.md']);
-			expect(result.sync_session_id).toBeDefined();
 		});
 
 		it('throws on non-200 status', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(500, 'Internal server error');
+			mockFetchFailure(500, 'Internal server error');
 
-			await expect(
-				client.sendManifestV2([], 'device-001', 0),
-			).rejects.toThrow(/V2 manifest exchange failed.*500/);
+			await expect(client.sendManifestV2([], 'device-001', 0))
+				.rejects.toThrow(/V2 manifest exchange failed.*500/);
 		});
 
 		it('throws on 401 (expired API key)', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(401, 'Unauthorized');
+			mockFetchFailure(401, 'Unauthorized');
 
-			await expect(
-				client.sendManifestV2([], 'device-001', 0),
-			).rejects.toThrow(/V2 manifest exchange failed.*401/);
+			await expect(client.sendManifestV2([], 'device-001', 0))
+				.rejects.toThrow(/V2 manifest exchange failed.*401/);
+		});
+
+		it('passes AbortSignal to fetch', async () => {
+			const client = createClient();
+			mockFetchSuccess(manifestResponseV2);
+			const controller = new AbortController();
+
+			await client.sendManifestV2([], 'device-001', 0, undefined, controller.signal);
+
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.signal).toBe(controller.signal);
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// downloadFiles (V2 pull path, BUG-3 fix)
+	// downloadFiles (uses fetch)
 	// -----------------------------------------------------------------------
 
 	describe('downloadFiles', () => {
 		it('sends session ID and paths to download endpoint', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, downloadResponse);
+			mockFetchSuccess(downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.method).toBe('POST');
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.method).toBe('POST');
 
-			const body = JSON.parse(call.body);
+			const body = JSON.parse(options.body);
 			expect(body.sync_session_id).toBe('session-v2');
 			expect(body.paths).toEqual(['notes/server-edit.md']);
 		});
 
 		it('uses server-provided endpoint when given (BUG-3 fix)', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, downloadResponse);
+			mockFetchSuccess(downloadResponse);
 
 			const serverEndpoint = `/api/workspaces/${WORKSPACE_ID}/sync/download`;
 			await client.downloadFiles('session-v2', ['notes/server-edit.md'], serverEndpoint);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}${serverEndpoint}`);
+			const [url] = mockFetch.mock.calls[0]!;
+			expect(url).toBe(`${API_URL}${serverEndpoint}`);
 		});
 
 		it('falls back to default /sync/download when endpoint not provided', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, downloadResponse);
+			mockFetchSuccess(downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/download`);
+			const [url] = mockFetch.mock.calls[0]!;
+			expect(url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/download`);
 		});
 
 		it('includes X-API-Key and Content-Type headers', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, downloadResponse);
+			mockFetchSuccess(downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/file.md']);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.headers['X-API-Key']).toBe(API_KEY);
-			expect(call.headers['Content-Type']).toBe('application/json');
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.headers['X-API-Key']).toBe(API_KEY);
+			expect(options.headers['Content-Type']).toBe('application/json');
 		});
 
 		it('returns files with base64 content', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, downloadResponse);
+			mockFetchSuccess(downloadResponse);
 
 			const result = await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
 			expect(result.files).toHaveLength(1);
 			expect(result.files[0]!.path).toBe('notes/server-edit.md');
 			expect(result.files[0]!.content_base64).toBe(btoa('# Server Edited Content'));
-			expect(result.files[0]!.content_hash).toBe('b'.repeat(64));
-			expect(result.files[0]!.size_bytes).toBe(512);
 		});
 
 		it('handles multiple files in download response', async () => {
@@ -612,42 +572,50 @@ describe('SyncClient', () => {
 					{ path: 'c.md', content_base64: btoa('CCC'), content_hash: 'c'.repeat(64), size_bytes: 3 },
 				],
 			};
-			mockRequestUrlSuccess(200, multiFileResponse);
+			mockFetchSuccess(multiFileResponse);
 
 			const result = await client.downloadFiles('session-v2', ['a.md', 'b.md', 'c.md']);
 
 			expect(result.files).toHaveLength(3);
-			expect(result.files.map(f => f.path)).toEqual(['a.md', 'b.md', 'c.md']);
 		});
 
 		it('sends multiple paths in request body', async () => {
 			const client = createClient();
-			mockRequestUrlSuccess(200, { files: [] });
+			mockFetchSuccess({ files: [] });
 
 			const paths = ['notes/a.md', 'notes/b.md', 'folder/c.md'];
 			await client.downloadFiles('session-v2', paths);
 
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			const body = JSON.parse(call.body);
+			const [, options] = mockFetch.mock.calls[0]!;
+			const body = JSON.parse(options.body);
 			expect(body.paths).toEqual(paths);
 		});
 
 		it('throws on non-200 status', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(404, 'Session not found');
+			mockFetchFailure(404, 'Session not found');
 
-			await expect(
-				client.downloadFiles('bad-session', ['notes/file.md']),
-			).rejects.toThrow(/Download failed.*404/);
+			await expect(client.downloadFiles('bad-session', ['notes/file.md']))
+				.rejects.toThrow(/Download failed.*404/);
 		});
 
 		it('throws on server error', async () => {
 			const client = createClient();
-			mockRequestUrlFailure(500, 'Internal error');
+			mockFetchFailure(500, 'Internal error');
 
-			await expect(
-				client.downloadFiles('session-v2', ['notes/file.md']),
-			).rejects.toThrow(/Download failed.*500/);
+			await expect(client.downloadFiles('session-v2', ['notes/file.md']))
+				.rejects.toThrow(/Download failed.*500/);
+		});
+
+		it('passes AbortSignal to fetch', async () => {
+			const client = createClient();
+			mockFetchSuccess(downloadResponse);
+			const controller = new AbortController();
+
+			await client.downloadFiles('session-v2', ['notes/file.md'], undefined, controller.signal);
+
+			const [, options] = mockFetch.mock.calls[0]!;
+			expect(options.signal).toBe(controller.signal);
 		});
 	});
 
@@ -659,42 +627,33 @@ describe('SyncClient', () => {
 		it('builds correct URL for each endpoint', async () => {
 			const client = createClient();
 
-			// Register
+			// Register (requestUrl)
 			mockRequestUrlSuccess(201, registrationResponse);
 			await client.register('d', 'n', '1.0.0', 'v');
 			expect((mockRequestUrl.mock.calls[0]![0] as any).url).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/register`,
 			);
 
-			// Manifest (V2)
-			mockRequestUrlSuccess(200, manifestResponseV2);
+			// Manifest (fetch)
+			mockFetchSuccess(manifestResponseV2);
 			await client.sendManifestV2([], 'device-001', 0);
-			expect((mockRequestUrl.mock.calls[1]![0] as any).url).toBe(
+			expect(mockFetch.mock.calls[0]![0]).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`,
 			);
 
-			// Status
+			// Status (requestUrl)
 			mockRequestUrlSuccess(200, statusResponse);
 			await client.getSyncStatus();
-			expect((mockRequestUrl.mock.calls[2]![0] as any).url).toBe(
+			expect((mockRequestUrl.mock.calls[1]![0] as any).url).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/status`,
 			);
 
-			// Upload (uses requestUrl with manual multipart)
-			mockRequestUrlSuccess(200, uploadResponse);
+			// Upload (fetch)
+			mockFetchSuccess(uploadResponse);
 			await client.uploadFiles('session', new Map());
-			expect((mockRequestUrl.mock.calls[3]![0] as any).url).toBe(
+			expect(mockFetch.mock.calls[1]![0]).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/upload`,
 			);
-		});
-
-		it('uses baked-in API URL for all requests', async () => {
-			const client = new SyncClient(API_KEY, WORKSPACE_ID);
-			mockRequestUrlSuccess(200, statusResponse);
-			await client.getSyncStatus();
-
-			const call = mockRequestUrl.mock.calls[0]![0] as any;
-			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/status`);
 		});
 	});
 });

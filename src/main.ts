@@ -21,6 +21,7 @@ import { SyncStatusBar } from './sync/sync-status-bar';
 import { FileHasher } from './sync/file-hasher';
 import { ConflictLogger } from './sync/conflict-logger';
 import { logger } from './utils/logger';
+import { networkStatus } from './utils/network-status';
 import { DEFAULT_SETTINGS, type LumenSettings, type WorkspaceConfig } from './types';
 
 export default class LumenPlugin extends Plugin {
@@ -125,6 +126,20 @@ export default class LumenPlugin extends Plugin {
 			},
 		});
 
+		// Register the cancel sync command
+		this.addCommand({
+			id: 'cancel-sync',
+			name: 'Cancel active sync',
+			checkCallback: (checking: boolean) => {
+				if (!this.syncManager) return false;
+				if (!checking) {
+					this.syncManager.cancelSync();
+					new Notice('Sync cancelled.');
+				}
+				return true;
+			},
+		});
+
 		// Register the help command
 		this.addCommand({
 			id: 'help',
@@ -178,6 +193,7 @@ export default class LumenPlugin extends Plugin {
 		this.stopIndexingPoll();
 		this.syncStatusBar?.destroy();
 		this.syncManager?.destroy();
+		networkStatus.destroy();
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_MAIN);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_LUMEN_DEBUG_LOG);
 	}
@@ -307,9 +323,11 @@ export default class LumenPlugin extends Plugin {
 
 		// Create status bar and wire to sync manager
 		const statusBarEl = this.addStatusBarItem();
-		this.syncStatusBar = new SyncStatusBar(statusBarEl, () => {
-			this.triggerSync();
-		});
+		this.syncStatusBar = new SyncStatusBar(
+			statusBarEl,
+			() => this.triggerSync(),
+			() => this.syncManager?.cancelSync(),
+		);
 
 		// Feed state changes and progress to the status bar
 		this.syncManager.onStateChange((state) => {

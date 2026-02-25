@@ -252,16 +252,16 @@ describe('classifyError — timeout errors', () => {
 // ---------------------------------------------------------------------------
 
 describe('classifyError — network errors', () => {
-	it('classifies ENOTFOUND as non-retryable network error', () => {
+	it('classifies ENOTFOUND as retryable network error', () => {
 		const result = classifyError(new Error('getaddrinfo ENOTFOUND example.com'));
 		expect(result.category).toBe('network');
-		expect(result.retryable).toBe(false);
+		expect(result.retryable).toBe(true);
 	});
 
-	it('classifies "getaddrinfo" as non-retryable network error', () => {
+	it('classifies "getaddrinfo" as retryable network error', () => {
 		const result = classifyError(new Error('getaddrinfo failed'));
 		expect(result.category).toBe('network');
-		expect(result.retryable).toBe(false);
+		expect(result.retryable).toBe(true);
 	});
 
 	it('classifies ECONNREFUSED as retryable network error', () => {

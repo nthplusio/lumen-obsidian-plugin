@@ -7,6 +7,7 @@
 
 import { setIcon } from 'obsidian';
 import type { SyncState } from '../types';
+import { networkStatus } from '../utils/network-status';
 
 /** Lucide icon name per sync state */
 const STATE_ICONS: Record<SyncState, string> = {
@@ -17,6 +18,8 @@ const STATE_ICONS: Record<SyncState, string> = {
 	downloading: 'loader-2',
 	success: 'check-circle',
 	error: 'alert-triangle',
+	offline: 'wifi-off',
+	cancelled: 'circle-slash',
 };
 
 /** CSS modifier class per sync state */
@@ -28,6 +31,8 @@ const STATE_CLASSES: Record<SyncState, string> = {
 	downloading: 'lumen-sync-active',
 	success: 'lumen-sync-success',
 	error: 'lumen-sync-error',
+	offline: 'lumen-sync-offline',
+	cancelled: 'lumen-sync-idle',
 };
 
 export class SyncStatusBar {
@@ -35,12 +40,15 @@ export class SyncStatusBar {
 	private iconEl: HTMLElement;
 	private textEl: HTMLElement;
 	private onRetry: () => void;
+	private onCancel: (() => void) | null = null;
 	private lastSyncAt: string | null = null;
 	private currentState: SyncState = 'idle';
 	private lastFilesUploaded = 0;
+	private networkUnsubscribe: (() => void) | null = null;
 
-	constructor(statusBarEl: HTMLElement, onRetry: () => void) {
+	constructor(statusBarEl: HTMLElement, onRetry: () => void, onCancel?: () => void) {
 		this.onRetry = onRetry;
+		this.onCancel = onCancel ?? null;
 
 		this.containerEl = statusBarEl.createEl('span', {
 			cls: 'lumen-sync-status-bar lumen-sync-idle',
@@ -58,6 +66,20 @@ export class SyncStatusBar {
 		this.textEl.textContent = 'Lumen';
 
 		this.containerEl.addEventListener('click', this.handleClick);
+
+		// Show offline state when network goes down
+		this.networkUnsubscribe = networkStatus.onChange((online) => {
+			if (!online) {
+				this.update('offline');
+			} else if (this.currentState === 'offline') {
+				this.update('idle');
+			}
+		});
+
+		// Initialize to offline if already offline
+		if (!networkStatus.online) {
+			this.update('offline');
+		}
 	}
 
 	/** Update display for a new sync state with optional progress. */
@@ -83,7 +105,7 @@ export class SyncStatusBar {
 		this.textEl.textContent = this.getStateText(state, progress);
 
 		// Update ARIA attributes
-		const isBusy = state === 'hashing' || state === 'manifest' || state === 'uploading';
+		const isBusy = state === 'hashing' || state === 'manifest' || state === 'uploading' || state === 'downloading';
 		this.containerEl.setAttribute('aria-busy', String(isBusy));
 		this.containerEl.setAttribute('aria-label', `Lumen sync: ${this.textEl.textContent}`);
 	}
@@ -111,6 +133,8 @@ export class SyncStatusBar {
 	destroy(): void {
 		this.containerEl.removeEventListener('click', this.handleClick);
 		this.containerEl.remove();
+		this.networkUnsubscribe?.();
+		this.networkUnsubscribe = null;
 	}
 
 	// -----------------------------------------------------------------------
@@ -120,8 +144,18 @@ export class SyncStatusBar {
 	private handleClick = (): void => {
 		if (this.currentState === 'error') {
 			this.onRetry();
+		} else if (this.isSyncing() && this.onCancel) {
+			this.onCancel();
 		}
 	};
+
+	/** Whether the status bar is showing an active sync state. */
+	private isSyncing(): boolean {
+		return this.currentState === 'hashing'
+			|| this.currentState === 'manifest'
+			|| this.currentState === 'uploading'
+			|| this.currentState === 'downloading';
+	}
 
 	private getStateText(
 		state: SyncState,
@@ -152,6 +186,10 @@ export class SyncStatusBar {
 					: 'Up to date';
 			case 'error':
 				return 'Sync failed (click to retry)';
+			case 'offline':
+				return 'Offline';
+			case 'cancelled':
+				return 'Sync cancelled';
 		}
 	}
 

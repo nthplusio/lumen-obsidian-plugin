@@ -1,17 +1,16 @@
 /**
- * SyncClient — HTTP client for the Lumen server sync endpoints.
+ * SyncClient -- HTTP client for the Lumen server sync endpoints.
  *
- * Mirrors the ApiClient pattern for consistency:
- *   - Constructor accepts credentials; updateSettings() swaps them.
- *   - Uses Obsidian's `requestUrl` for JSON requests (proper CORS in Electron).
- *   - Uses native `fetch` for multipart FormData uploads (requestUrl
- *     doesn't handle FormData boundaries correctly).
+ * Uses native `fetch` for sync operations (supports AbortSignal for
+ * cancellation). Uses Obsidian's `requestUrl` only for registration
+ * and status (where cancellation isn't needed).
  *
- * Endpoints (all already implemented server-side in routes/sync.ts):
- *   POST /api/workspaces/:id/sync/register  — Plugin registration
- *   POST /api/workspaces/:id/sync/manifest  — Hash exchange (Step 1)
- *   POST /api/workspaces/:id/sync/upload    — File upload  (Step 2)
- *   GET  /api/workspaces/:id/sync/status    — Sync status
+ * Endpoints:
+ *   POST /api/workspaces/:id/sync/register  -- Plugin registration
+ *   POST /api/workspaces/:id/sync/manifest  -- Hash exchange (Step 1)
+ *   POST /api/workspaces/:id/sync/upload    -- File upload  (Step 2)
+ *   POST /api/workspaces/:id/sync/download  -- File download (Step 3)
+ *   GET  /api/workspaces/:id/sync/status    -- Sync status
  */
 
 import { requestUrl } from 'obsidian';
@@ -45,7 +44,7 @@ export class SyncClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// POST /sync/register — One-time plugin registration
+	// POST /sync/register -- One-time plugin registration
 	// -----------------------------------------------------------------------
 
 	async register(
@@ -83,31 +82,28 @@ export class SyncClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// POST /sync/upload — Step 2: Upload requested files
+	// POST /sync/upload -- Step 2: Upload requested files
 	// -----------------------------------------------------------------------
 
 	/**
 	 * Upload file contents as multipart/form-data.
 	 *
-	 * Uses Obsidian's `requestUrl` with a manually constructed multipart
-	 * body. We can't use native `fetch` because it's subject to CORS in
-	 * Electron's renderer, and we can't pass a FormData object to
-	 * `requestUrl` because it doesn't serialize boundaries correctly.
-	 * Instead we build the multipart payload as an ArrayBuffer ourselves.
+	 * Uses native `fetch` for AbortSignal support with a manually
+	 * constructed multipart body (FormData serialization is unreliable
+	 * across Electron versions).
 	 *
-	 * Protocol: each file is a form part where the field name is the
-	 * vault-relative path and the value is the file content.
-	 *
-	 * @param sessionId — sync_session_id returned from sendManifestV2()
-	 * @param files — Map of vault-relative path → file content (string)
-	 * @param batchIndex — zero-based index of this batch within the upload
-	 * @param isLastBatch — true if this is the final batch in the upload
+	 * @param sessionId -- sync_session_id returned from sendManifestV2()
+	 * @param files -- Map of vault-relative path -> file content
+	 * @param batchIndex -- zero-based index of this batch
+	 * @param isLastBatch -- true if this is the final batch
+	 * @param signal -- AbortSignal for cancellation
 	 */
 	async uploadFiles(
 		sessionId: string,
 		files: Map<string, string | ArrayBuffer>,
 		batchIndex: number = 0,
 		isLastBatch: boolean = true,
+		signal?: AbortSignal,
 	): Promise<SyncUploadResponse> {
 		const url = this.buildUrl('sync/upload');
 
@@ -134,8 +130,6 @@ export class SyncClient extends LumenHttpClient {
 		for (const [path, content] of files) {
 			const isText = typeof content === 'string';
 			const mimeType = isText ? 'text/plain' : 'application/octet-stream';
-			// Sanitize path for Content-Disposition: replace " and \ with _ to prevent
-			// header injection, strip CRLF to prevent multipart boundary attacks.
 			const safePath = path.replace(/["\\]/g, '_').replace(/[\r\n]/g, '');
 			const header = `--${boundary}\r\nContent-Disposition: form-data; name="${safePath}"; filename="${safePath}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
 			parts.push(encoder.encode(header));
@@ -160,23 +154,24 @@ export class SyncClient extends LumenHttpClient {
 			offset += part.length;
 		}
 
-		const response = await requestUrl({
-			url,
+		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
 				'X-API-Key': this.apiKey,
 				'Content-Type': `multipart/form-data; boundary=${boundary}`,
 			},
 			body: body.buffer,
+			signal,
 		});
 
-		if (response.status < 200 || response.status >= 300) {
+		if (!response.ok) {
+			const errorText = await this.extractFetchErrorMessage(response);
 			throw new Error(
-				`Upload failed: ${response.status} ${this.extractErrorMessage(response)}`,
+				`Upload failed: ${response.status} ${errorText}`,
 			);
 		}
 
-		const result = response.json as SyncUploadResponse;
+		const result = (await response.json()) as SyncUploadResponse;
 		logger.info('Upload complete:', {
 			accepted: result.accepted,
 			rejected: result.rejected,
@@ -188,7 +183,7 @@ export class SyncClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// GET /sync/status — Poll sync / indexing status
+	// GET /sync/status -- Poll sync / indexing status
 	// -----------------------------------------------------------------------
 
 	async getSyncStatus(): Promise<SyncStatusResponse> {
@@ -210,23 +205,20 @@ export class SyncClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// POST /sync/manifest — Step 1: Hash exchange (V2 two-way sync)
+	// POST /sync/manifest -- Step 1: Hash exchange (V2 two-way sync)
 	// -----------------------------------------------------------------------
 
 	/**
 	 * Send the client file manifest with device ID and sync sequence.
 	 *
-	 * The server compares hashes and returns:
-	 *   - `needed_files` — files the server needs uploaded
-	 *   - `server_changes` — files changed on the server since last sync
-	 *   - `server_deletions` — files deleted on the server
-	 *   - `conflicts` — files modified on both sides
+	 * Uses native `fetch` for AbortSignal support during sync cancellation.
 	 */
 	async sendManifestV2(
 		files: FileManifestEntry[],
 		deviceId: string,
 		lastSyncSeq: number,
 		cursor?: string,
+		signal?: AbortSignal,
 	): Promise<SyncManifestResponseV2> {
 		const url = this.buildUrl('sync/manifest');
 
@@ -247,20 +239,23 @@ export class SyncClient extends LumenHttpClient {
 			body.cursor = cursor;
 		}
 
-		const response = await requestUrl({
-			url,
+		const response = await fetch(url, {
 			method: 'POST',
 			headers: this.headers,
 			body: JSON.stringify(body),
+			signal,
 		});
 
-		if (response.status !== 200) {
-			throw new Error(
-				`V2 manifest exchange failed: ${response.status} ${this.extractErrorMessage(response)}`,
+		if (!response.ok) {
+			const errorText = await this.extractFetchErrorMessage(response);
+			const error = new Error(
+				`V2 manifest exchange failed: ${response.status} ${errorText}`,
 			);
+			(error as Error & { status: number }).status = response.status;
+			throw error;
 		}
 
-		const result = response.json as SyncManifestResponseV2;
+		const result = (await response.json()) as SyncManifestResponseV2;
 		logger.info('V2 manifest response:', {
 			sessionId: result.sync_session_id,
 			neededFiles: result.needed_files.length,
@@ -275,16 +270,13 @@ export class SyncClient extends LumenHttpClient {
 	/**
 	 * Download files from the server (pull path).
 	 *
-	 * Called after V2 manifest indicates `server_changes`. Files are
-	 * returned as base64-encoded content.
-	 *
-	 * BUG-3 fix: accepts optional endpoint parameter from server response
-	 * instead of hardcoding the download path.
+	 * Uses native `fetch` for AbortSignal support during sync cancellation.
 	 */
 	async downloadFiles(
 		sessionId: string,
 		paths: string[],
 		endpoint?: string,
+		signal?: AbortSignal,
 	): Promise<SyncDownloadResponse> {
 		const url = endpoint
 			? `${this.baseUrl}${endpoint}`
@@ -292,23 +284,26 @@ export class SyncClient extends LumenHttpClient {
 
 		logger.debug('Downloading files:', { sessionId, pathCount: paths.length, endpoint: endpoint ?? '(default)' });
 
-		const response = await requestUrl({
-			url,
+		const response = await fetch(url, {
 			method: 'POST',
 			headers: this.headers,
 			body: JSON.stringify({
 				sync_session_id: sessionId,
 				paths,
 			}),
+			signal,
 		});
 
-		if (response.status !== 200) {
-			throw new Error(
-				`Download failed: ${response.status} ${this.extractErrorMessage(response)}`,
+		if (!response.ok) {
+			const errorText = await this.extractFetchErrorMessage(response);
+			const error = new Error(
+				`Download failed: ${response.status} ${errorText}`,
 			);
+			(error as Error & { status: number }).status = response.status;
+			throw error;
 		}
 
-		return response.json as SyncDownloadResponse;
+		return (await response.json()) as SyncDownloadResponse;
 	}
 
 	// -----------------------------------------------------------------------
@@ -333,6 +328,23 @@ export class SyncClient extends LumenHttpClient {
 			return response.text?.slice(0, 200) ?? '';
 		} catch {
 			return '';
+		}
+	}
+
+	/**
+	 * Extract error message from a native fetch Response.
+	 */
+	private async extractFetchErrorMessage(response: Response): Promise<string> {
+		try {
+			const body = (await response.json()) as Record<string, unknown>;
+			return (body.message as string) || (body.error as string) || '';
+		} catch {
+			try {
+				const text = await response.text();
+				return text.slice(0, 200);
+			} catch {
+				return '';
+			}
 		}
 	}
 }

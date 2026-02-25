@@ -8,6 +8,10 @@ Lumen is an Obsidian community plugin that provides semantic search and vault sy
 
 Plugin ID: `lumen-search`. Part of the `@lumen/obsidian-plugin` npm workspace in the parent Lumen monorepo.
 
+## Project Status
+
+**Pre-launch — no customers yet.** Do not worry about backward compatibility, migration paths, or deprecation shims. Breaking changes to APIs, interfaces, and settings are fine. Just make the code clean and correct. This will change once we have users on the marketplace.
+
 ## Commands
 
 ```bash

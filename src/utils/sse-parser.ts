@@ -161,3 +161,106 @@ export function parseConversationSSE(buffer: string): ConversationSSEResult {
 
 	return { tokens, sources, metadata, errors };
 }
+
+// ============================================================================
+// Incremental SSE Parser (for streaming via fetch + ReadableStream)
+// ============================================================================
+
+/** Single parsed SSE event from incremental parsing */
+export interface ParsedSSEEvent {
+	/** Token text (from content_block_delta) */
+	token?: string;
+	/** Sources (from lumen_metadata) */
+	sources?: ChatSource[];
+	/** Full metadata (from lumen_metadata) */
+	metadata?: StreamMetadata;
+	/** Error message (from error event) */
+	error?: string;
+}
+
+/**
+ * Parse a chunk of SSE data incrementally.
+ *
+ * Splits on double-newline boundaries, parses complete events,
+ * and returns the incomplete remainder for the next call.
+ *
+ * @param buffer Accumulated SSE text (may contain incomplete events)
+ * @returns Parsed events and remaining incomplete buffer
+ */
+export function parseSSEChunk(buffer: string): {
+	events: ParsedSSEEvent[];
+	remaining: string;
+} {
+	const events: ParsedSSEEvent[] = [];
+
+	// Split on double newlines — SSE event boundaries
+	const blocks = buffer.split('\n\n');
+
+	// Last element may be incomplete — keep as remainder
+	const remaining = blocks.pop() ?? '';
+
+	for (const block of blocks) {
+		const trimmedBlock = block.trim();
+		if (!trimmedBlock) continue;
+
+		let eventType = '';
+		let dataStr = '';
+
+		for (const line of trimmedBlock.split('\n')) {
+			const trimmed = line.trim();
+			if (trimmed.startsWith('event: ')) {
+				eventType = trimmed.slice(7).trim();
+			} else if (trimmed.startsWith('data: ')) {
+				dataStr += (dataStr ? '\n' : '') + trimmed.slice(6);
+			} else if (trimmed.startsWith('data:')) {
+				dataStr += (dataStr ? '\n' : '') + trimmed.slice(5);
+			}
+		}
+
+		if (!dataStr) continue;
+
+		try {
+			const data = JSON.parse(dataStr) as Record<string, unknown>;
+			const event: ParsedSSEEvent = {};
+
+			if (eventType === 'content_block_delta') {
+				const delta = data['delta'] as Record<string, unknown> | undefined;
+				if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
+					event.token = delta['text'] as string;
+				}
+			} else if (eventType === 'lumen_metadata') {
+				const rawSources = data['sources'] as Array<Record<string, unknown>> | undefined;
+				if (Array.isArray(rawSources)) {
+					event.sources = rawSources
+						.filter(s => typeof s['path'] === 'string' && typeof s['score'] === 'number')
+						.map(s => ({ path: s['path'] as string, score: s['score'] as number }));
+				}
+				const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
+				event.metadata = {
+					sources: event.sources ?? [],
+					tokenUsage: {
+						input: (tokenUsage?.['input'] as number) ?? 0,
+						output: (tokenUsage?.['output'] as number) ?? 0,
+					},
+					turnsUsed: (data['turns_used'] as number) ?? 0,
+					turnsRemaining: (data['turns_remaining'] as number) ?? 0,
+				};
+			} else if (eventType === 'error') {
+				const errorObj = data['error'] as Record<string, unknown> | undefined;
+				event.error = (errorObj?.['message'] as string) ?? (data['message'] as string) ?? 'Unknown error';
+			} else {
+				// Skip non-content events (message_start, ping, etc.)
+				continue;
+			}
+
+			// Only push events that have meaningful content
+			if (event.token !== undefined || event.sources || event.metadata || event.error) {
+				events.push(event);
+			}
+		} catch {
+			// Skip malformed JSON blocks
+		}
+	}
+
+	return { events, remaining };
+}

@@ -215,6 +215,7 @@ describe('SyncManager V2 integration', () => {
 				'test-device-001',
 				5,
 				'old-cursor',
+				expect.any(AbortSignal),
 			);
 		});
 
@@ -240,6 +241,7 @@ describe('SyncManager V2 integration', () => {
 				'session-v2',
 				['notes/from-server.md'],
 				'/api/workspaces/ws-001/sync/download',
+				expect.any(AbortSignal),
 			);
 			expect(result.filesDownloaded).toBe(1);
 		});

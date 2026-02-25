@@ -3,17 +3,17 @@
  *
  * Tests:
  *   - Plan caching: fresh fetch, cache hit, expiry, failure fallback
+ *   - sendMessage with streaming fetch + onToken callback
  *   - 403 → PlanUpgradeRequiredError
  *   - 429 → RateLimitExceededError
- *   - sendMessage with onToken callback replays tokens
  *   - Conversation CRUD calls correct endpoints
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatClient, PlanUpgradeRequiredError, RateLimitExceededError } from '../src/chat-client';
 
 // ---------------------------------------------------------------------------
-// Mock Obsidian's requestUrl
+// Mock Obsidian's requestUrl (used for CRUD operations and plan fetching)
 // ---------------------------------------------------------------------------
 
 const mockRequestUrl = vi.fn();
@@ -23,15 +23,63 @@ vi.mock('obsidian', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Helpers: create a mock ReadableStream from SSE text
+// ---------------------------------------------------------------------------
+
+function createMockReadableStream(text: string): ReadableStream<Uint8Array> {
+	const encoder = new TextEncoder();
+	const chunks = [encoder.encode(text)];
+	let index = 0;
+
+	return new ReadableStream({
+		pull(controller) {
+			if (index < chunks.length) {
+				controller.enqueue(chunks[index]!);
+				index++;
+			} else {
+				controller.close();
+			}
+		},
+	});
+}
+
+function createMockFetchResponse(status: number, body: string | Record<string, unknown>, ok?: boolean): Response {
+	const isStream = typeof body === 'string';
+	return {
+		ok: ok ?? (status >= 200 && status < 300),
+		status,
+		statusText: status === 200 ? 'OK' : 'Error',
+		headers: new Headers(),
+		body: isStream ? createMockReadableStream(body) : null,
+		json: async () => (isStream ? {} : body),
+		text: async () => (isStream ? body : JSON.stringify(body)),
+		clone: () => createMockFetchResponse(status, body, ok),
+		redirected: false,
+		type: 'basic' as ResponseType,
+		url: '',
+		bodyUsed: false,
+		arrayBuffer: async () => new ArrayBuffer(0),
+		blob: async () => new Blob(),
+		formData: async () => new FormData(),
+		bytes: async () => new Uint8Array(),
+	} as Response;
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('ChatClient', () => {
 	let client: ChatClient;
+	const originalFetch = globalThis.fetch;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		client = new ChatClient('test-key', 'ws-123');
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
 	});
 
 	// -----------------------------------------------------------------------
@@ -93,7 +141,7 @@ describe('ChatClient', () => {
 			});
 
 			await client.getWorkspacePlan();
-			client.updateSettings('http://new-url', 'new-key', 'new-ws');
+			client.updateSettings('new-key', 'new-ws');
 
 			mockRequestUrl.mockResolvedValueOnce({
 				json: { subscription: { plan: 'pro', status: 'active' } },
@@ -131,7 +179,7 @@ describe('ChatClient', () => {
 
 			await client.createConversation('My Chat');
 
-			const callBody = JSON.parse(mockRequestUrl.mock.calls[0][0].body);
+			const callBody = JSON.parse(mockRequestUrl.mock.calls[0]![0].body);
 			expect(callBody.title).toBe('My Chat');
 		});
 	});
@@ -165,36 +213,36 @@ describe('ChatClient', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// sendMessage
+	// sendMessage (streaming via fetch)
 	// -----------------------------------------------------------------------
 
 	describe('sendMessage', () => {
 		it('calls POST with message and deep_research flag', async () => {
-			mockRequestUrl.mockResolvedValueOnce({
-				status: 200,
-				text: [
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(200, [
 					'event: content_block_delta',
 					'data: {"delta":{"type":"text_delta","text":"Hello"}}',
 					'',
 					'',
-				].join('\n'),
-			});
+				].join('\n')),
+			);
+			globalThis.fetch = mockFetch;
 
 			await client.sendMessage('conv-1', 'Test message', { deepResearch: true });
 
-			const callArgs = mockRequestUrl.mock.calls[0][0];
-			expect(callArgs.url).toBe('https://app.getlumen.dev/api/conversations/conv-1/messages');
-			expect(callArgs.method).toBe('POST');
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0]!;
+			expect(url).toBe('https://app.getlumen.dev/api/conversations/conv-1/messages');
+			expect(options.method).toBe('POST');
 
-			const body = JSON.parse(callArgs.body);
+			const body = JSON.parse(options.body);
 			expect(body.message).toBe('Test message');
 			expect(body.deep_research).toBe(true);
 		});
 
-		it('replays tokens via onToken callback', async () => {
-			mockRequestUrl.mockResolvedValueOnce({
-				status: 200,
-				text: [
+		it('streams tokens via onToken callback', async () => {
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(200, [
 					'event: content_block_delta',
 					'data: {"delta":{"type":"text_delta","text":"Hello"}}',
 					'',
@@ -202,8 +250,9 @@ describe('ChatClient', () => {
 					'data: {"delta":{"type":"text_delta","text":" world"}}',
 					'',
 					'',
-				].join('\n'),
-			});
+				].join('\n')),
+			);
+			globalThis.fetch = mockFetch;
 
 			const tokens: string[] = [];
 			const result = await client.sendMessage('conv-1', 'Test', {
@@ -215,9 +264,8 @@ describe('ChatClient', () => {
 		});
 
 		it('returns sources and metadata from lumen_metadata event', async () => {
-			mockRequestUrl.mockResolvedValueOnce({
-				status: 200,
-				text: [
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(200, [
 					'event: content_block_delta',
 					'data: {"delta":{"type":"text_delta","text":"Answer"}}',
 					'',
@@ -225,8 +273,9 @@ describe('ChatClient', () => {
 					'data: {"sources":[{"path":"note.md","score":0.9}],"token_usage":{"input":10,"output":20},"turns_used":1,"turns_remaining":9}',
 					'',
 					'',
-				].join('\n'),
-			});
+				].join('\n')),
+			);
+			globalThis.fetch = mockFetch;
 
 			const result = await client.sendMessage('conv-1', 'Q');
 
@@ -236,15 +285,31 @@ describe('ChatClient', () => {
 		});
 
 		it('returns empty content when no tokens in response', async () => {
-			mockRequestUrl.mockResolvedValueOnce({
-				status: 200,
-				text: '',
-			});
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(200, ''),
+			);
+			globalThis.fetch = mockFetch;
 
 			const result = await client.sendMessage('conv-1', 'Q');
 
 			expect(result.content).toBe('');
 			expect(result.sources).toEqual([]);
+		});
+
+		it('supports AbortSignal for cancellation', async () => {
+			const controller = new AbortController();
+			const mockFetch = vi.fn().mockImplementation(() => {
+				const error = new Error('The operation was aborted');
+				error.name = 'AbortError';
+				return Promise.reject(error);
+			});
+			globalThis.fetch = mockFetch;
+
+			controller.abort();
+
+			await expect(
+				client.sendMessage('conv-1', 'Q', { signal: controller.signal }),
+			).rejects.toThrow('The operation was aborted');
 		});
 	});
 
@@ -254,52 +319,46 @@ describe('ChatClient', () => {
 
 	describe('error handling', () => {
 		it('throws PlanUpgradeRequiredError on 403 with plan_upgrade_required', async () => {
-			mockRequestUrl.mockRejectedValueOnce({
-				status: 403,
-				json: {
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(403, {
 					error: 'plan_upgrade_required',
 					message: 'Deep Research requires a Plus plan',
 					required_plan: 'plus',
-				},
-			});
+				}, false),
+			);
+			globalThis.fetch = mockFetch;
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow(PlanUpgradeRequiredError);
-
-			try {
-				await client.sendMessage('conv-1', 'Q');
-			} catch (err) {
-				// Already caught above — this block tests the first throw
-			}
 		});
 
 		it('throws RateLimitExceededError on 429 with rate_limit_exceeded', async () => {
-			mockRequestUrl.mockRejectedValueOnce({
-				status: 429,
-				json: {
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(429, {
 					error: 'rate_limit_exceeded',
 					message: 'Daily limit reached',
 					limit: 50,
 					remaining: 0,
 					resets_at: '2026-02-20T00:00:00Z',
-				},
-			});
+				}, false),
+			);
+			globalThis.fetch = mockFetch;
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow(RateLimitExceededError);
 		});
 
 		it('includes rate limit details in RateLimitExceededError', async () => {
-			mockRequestUrl.mockRejectedValueOnce({
-				status: 429,
-				json: {
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(429, {
 					error: 'rate_limit_exceeded',
 					message: 'Daily limit reached',
 					limit: 50,
 					remaining: 0,
 					resets_at: '2026-02-20T00:00:00Z',
-				},
-			});
+				}, false),
+			);
+			globalThis.fetch = mockFetch;
 
 			try {
 				await client.sendMessage('conv-1', 'Q');
@@ -313,18 +372,19 @@ describe('ChatClient', () => {
 		});
 
 		it('throws generic Error on 403 without plan_upgrade_required', async () => {
-			mockRequestUrl.mockRejectedValueOnce({
-				status: 403,
-				json: { message: 'Access denied' },
-			});
+			const mockFetch = vi.fn().mockResolvedValueOnce(
+				createMockFetchResponse(403, { message: 'Access denied' }, false),
+			);
+			globalThis.fetch = mockFetch;
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow('Access denied');
 		});
 
-		it('re-throws original error for non-403/429 errors', async () => {
+		it('re-throws original error for network failures', async () => {
 			const networkErr = new Error('ECONNREFUSED');
-			mockRequestUrl.mockRejectedValueOnce(networkErr);
+			const mockFetch = vi.fn().mockRejectedValueOnce(networkErr);
+			globalThis.fetch = mockFetch;
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow('ECONNREFUSED');

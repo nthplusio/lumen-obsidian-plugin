@@ -1,12 +1,11 @@
 /**
  * Chat Client for Lumen Conversations API.
  *
- * Handles conversation CRUD, buffered SSE message streaming with token replay,
+ * Handles conversation CRUD, real-time SSE streaming via native fetch,
  * workspace plan caching, and typed error handling (403/429).
  *
- * Uses Obsidian's `requestUrl` for all HTTP calls (CORS-safe in Electron).
- * `requestUrl` buffers the full response, so tokens are replayed via callback
- * after the server finishes generating.
+ * Uses native `fetch` for message streaming (real-time SSE via ReadableStream).
+ * Uses Obsidian's `requestUrl` for CRUD operations (CORS-safe in Electron).
  */
 
 import { requestUrl } from 'obsidian';
@@ -20,7 +19,7 @@ import type {
 } from './types';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from './types';
 import { LumenHttpClient } from './http-client';
-import { parseConversationSSE } from './utils/sse-parser';
+import { parseSSEChunk } from './utils/sse-parser';
 import { logger } from './utils/logger';
 
 // Re-export error classes for backward compatibility
@@ -142,70 +141,124 @@ export class ChatClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// Send Message (buffered SSE)
+	// Send Message (real-time SSE streaming via fetch)
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Send a message to a conversation and receive the response via buffered SSE.
+	 * Send a message with real-time SSE streaming via native fetch.
 	 *
-	 * Since `requestUrl` buffers the entire response, this blocks until the
-	 * server finishes generating. Tokens are then replayed via the `onToken`
-	 * callback for progressive UI rendering.
+	 * Tokens arrive incrementally via the `onToken` callback as the server
+	 * generates them. The AbortSignal enables true request cancellation.
 	 *
-	 * @param conversationId The conversation to send to
-	 * @param message The user's message
+	 * @param conversationId Conversation to send to
+	 * @param message User's message text
 	 * @param options.deepResearch Enable deep research mode
-	 * @param options.onToken Called for each content token (replayed after buffer completes)
+	 * @param options.onToken Called for each content token AS IT ARRIVES
+	 * @param options.signal AbortSignal for cancellation
 	 * @returns Complete response with content, sources, and metadata
 	 */
 	async sendMessage(
 		conversationId: string,
 		message: string,
-		options: { deepResearch?: boolean; onToken?: (token: string) => void } = {},
+		options: {
+			deepResearch?: boolean;
+			onToken?: (token: string) => void;
+			signal?: AbortSignal;
+		} = {},
 	): Promise<ChatStreamResult> {
 		const url = `${this.baseUrl}/api/conversations/${conversationId}/messages`;
 		logger.info(`Chat → POST ${url} (deep_research: ${options.deepResearch ?? false})`);
 
-		let responseText: string;
+		const startMs = Date.now();
+
+		let response: Response;
 		try {
-			const response = await requestUrl({
-				url,
+			response = await fetch(url, {
 				method: 'POST',
 				headers: this.headers,
 				body: JSON.stringify({
 					message,
 					deep_research: options.deepResearch ?? false,
 				}),
+				signal: options.signal,
 			});
-			responseText = response.text;
-			logger.info(`Chat response: ${response.status}, ${responseText.length} bytes`);
 		} catch (err: unknown) {
-			this.handleHttpError(err);
-			throw err; // unreachable, handleHttpError always throws or re-throws
+			// AbortError from signal.abort() — rethrow cleanly
+			if (err instanceof Error && err.name === 'AbortError') {
+				logger.info('Chat request aborted by user');
+				throw err;
+			}
+			logger.error(`Chat fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+			throw err;
 		}
 
-		// Parse the buffered SSE response
-		const parseResult = parseConversationSSE(
-			responseText.endsWith('\n') ? responseText : responseText + '\n',
-		);
+		logger.info(`Chat fetch response: ${response.status} in ${Date.now() - startMs}ms`);
 
-		// Log any SSE-level errors
-		for (const errMsg of parseResult.errors) {
+		// Handle HTTP errors before reading the body
+		if (!response.ok) {
+			await this.handleFetchError(response);
+		}
+
+		// Read streaming response
+		const reader = response.body?.getReader();
+		if (!reader) {
+			throw new Error('No response body from chat endpoint');
+		}
+
+		const decoder = new TextDecoder();
+		let buffer = '';
+		const tokens: string[] = [];
+		let sources: ChatSource[] = [];
+		let metadata: StreamMetadata | null = null;
+		const errors: string[] = [];
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+
+				// Parse complete SSE events from buffer
+				const { events, remaining } = parseSSEChunk(buffer);
+				buffer = remaining;
+
+				for (const event of events) {
+					if (event.token !== undefined) {
+						tokens.push(event.token);
+						options.onToken?.(event.token);
+					}
+					if (event.sources) {
+						sources = event.sources;
+					}
+					if (event.metadata) {
+						metadata = event.metadata;
+					}
+					if (event.error) {
+						errors.push(event.error);
+					}
+				}
+			}
+		} catch (err: unknown) {
+			// AbortError during streaming — return what we have so far
+			if (err instanceof Error && err.name === 'AbortError') {
+				logger.info(`Chat stream aborted after ${tokens.length} tokens`);
+				throw err;
+			}
+			throw err;
+		} finally {
+			reader.releaseLock();
+		}
+
+		// Log SSE-level errors
+		for (const errMsg of errors) {
 			logger.warn(`Chat SSE error: ${errMsg}`);
 		}
 
-		// Replay tokens via callback
-		let fullContent = '';
-		for (const token of parseResult.tokens) {
-			fullContent += token;
-			options.onToken?.(token);
-		}
+		const content = tokens.join('');
+		logger.info(`Chat complete: ${content.length} chars, ${sources.length} sources, ${Date.now() - startMs}ms total`);
 
-		const sources: ChatSource[] = parseResult.sources;
-		const metadata: StreamMetadata | null = parseResult.metadata;
-
-		logger.info(`Chat complete: ${fullContent.length} chars, ${sources.length} sources`);
-		return { content: fullContent, sources, metadata };
+		return { content, sources, metadata };
 	}
 
 	// -----------------------------------------------------------------------
@@ -213,15 +266,20 @@ export class ChatClient extends LumenHttpClient {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Parse and throw typed errors for HTTP failures.
+	 * Parse HTTP error response from native fetch and throw typed errors.
 	 *
-	 * requestUrl throws an object with { status, text, json } for HTTP errors.
+	 * Reads the response body as JSON to extract structured error info
+	 * for 403 (plan_upgrade_required) and 429 (rate_limit_exceeded).
 	 */
-	private handleHttpError(err: unknown): never {
-		const httpErr = err as { status?: number; text?: string; json?: Record<string, unknown> };
+	private async handleFetchError(response: Response): Promise<never> {
+		let body: Record<string, unknown> = {};
+		try {
+			body = (await response.json()) as Record<string, unknown>;
+		} catch {
+			// Response body may not be JSON — proceed with empty body
+		}
 
-		if (httpErr.status === 403) {
-			const body = httpErr.json ?? {};
+		if (response.status === 403) {
 			if (body['error'] === 'plan_upgrade_required') {
 				const requiredPlan = (body['required_plan'] as string) ?? 'Plus';
 				const msg = (body['message'] as string) ?? `This feature requires a ${requiredPlan} plan.`;
@@ -233,8 +291,7 @@ export class ChatClient extends LumenHttpClient {
 			throw new Error(msg);
 		}
 
-		if (httpErr.status === 429) {
-			const body = httpErr.json ?? {};
+		if (response.status === 429) {
 			if (body['error'] === 'rate_limit_exceeded') {
 				const msg = (body['message'] as string) ?? 'Rate limit exceeded.';
 				const limit = (body['limit'] as number) ?? 0;
@@ -248,8 +305,13 @@ export class ChatClient extends LumenHttpClient {
 			throw new RateLimitExceededError(msg, 0, 0, '');
 		}
 
-		const msg = err instanceof Error ? err.message : String(err);
-		logger.error(`Chat request failed: ${httpErr.status ?? 'network'} — ${msg}`);
-		throw err;
+		const msg = body['message'] as string | undefined;
+		const errorText = msg ?? `HTTP ${response.status}: ${response.statusText}`;
+		logger.error(`Chat request failed: ${response.status} — ${errorText}`);
+
+		// Throw an error with status property for classifyError() to detect
+		const error = new Error(errorText);
+		(error as Error & { status: number }).status = response.status;
+		throw error;
 	}
 }

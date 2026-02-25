@@ -1,8 +1,9 @@
 /**
  * Error classification utility for the Lumen Obsidian plugin.
  *
- * Extracts and generalizes the error classification logic originally
- * embedded in search-view.ts so both search and sync code can reuse it.
+ * Classifies errors into structured categories with user-facing messages
+ * and retry guidance. Uses a status-code-first approach: if the error
+ * has a `.status` property, that takes priority over message matching.
  */
 
 /** High-level error category */
@@ -17,23 +18,94 @@ export interface ClassifiedError {
 	statusCode?: number;
 }
 
-/**
- * Classify an unknown error into a structured category.
- *
- * Pattern-matches on error messages and HTTP status codes to determine
- * the error type, whether it's retryable, and what message to show.
- */
-export function classifyError(err: unknown): ClassifiedError {
-	if (!(err instanceof Error)) {
-		return {
-			category: 'unknown',
-			message: 'An unexpected error occurred.',
-			retryable: false,
-		};
+// ---------------------------------------------------------------------------
+// Status code classification (takes priority over message matching)
+// ---------------------------------------------------------------------------
+
+function classifyByStatusCode(status: number, msg: string): ClassifiedError | null {
+	switch (status) {
+		case 400:
+			if (msg.includes('MANIFEST_TOO_LARGE') || msg.includes('10,000') || msg.includes('10000')) {
+				return {
+					category: 'validation',
+					message: 'Too many files for sync. Add exclude patterns on the Lumen server to reduce the count.',
+					retryable: false,
+					statusCode: 400,
+				};
+			}
+			return {
+				category: 'validation',
+				message: 'Invalid request. Check your data and try again.',
+				retryable: false,
+				statusCode: 400,
+			};
+		case 401:
+			return {
+				category: 'auth',
+				message: 'Invalid or expired API key. Check your key in Settings.',
+				retryable: false,
+				statusCode: 401,
+			};
+		case 403:
+			return {
+				category: 'auth',
+				message: 'Access denied. Your API key may lack the required permissions.',
+				retryable: false,
+				statusCode: 403,
+			};
+		case 404:
+			return {
+				category: 'config',
+				message: 'Endpoint not found. Verify the server URL in Settings.',
+				retryable: false,
+				statusCode: 404,
+			};
+		case 410:
+			return {
+				category: 'validation',
+				message: 'Sync session expired. A new sync will be started.',
+				retryable: false,
+				statusCode: 410,
+			};
+		case 413:
+			return {
+				category: 'validation',
+				message: 'File too large for upload. Check server size limits.',
+				retryable: false,
+				statusCode: 413,
+			};
+		case 422:
+			return {
+				category: 'validation',
+				message: 'Data validation failed. Try syncing again.',
+				retryable: true,
+				statusCode: 422,
+			};
+		case 429:
+			return {
+				category: 'rate-limit',
+				message: 'Rate limited. Waiting before retrying...',
+				retryable: true,
+				statusCode: 429,
+			};
+		default:
+			if (status >= 500 && status < 600) {
+				return {
+					category: 'server',
+					message: 'Server error. The Lumen server may be restarting.',
+					retryable: true,
+					statusCode: status,
+				};
+			}
+			return null;
 	}
+}
 
-	const msg = err.message;
+// ---------------------------------------------------------------------------
+// Message-based classification (fallback when no status code)
+// ---------------------------------------------------------------------------
 
+function classifyByMessage(msg: string): ClassifiedError {
 	// --- Auth errors (not retryable, need user action) ---
 	if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('Authentication')) {
 		return {
@@ -132,11 +204,12 @@ export function classifyError(err: unknown): ClassifiedError {
 	}
 
 	// --- Network errors ---
+	// ENOTFOUND is retryable: DNS failures are often transient (network blip, DNS cache miss)
 	if (msg.includes('ENOTFOUND') || msg.includes('getaddrinfo')) {
 		return {
 			category: 'network',
-			message: 'Server not found. Check the URL in Settings.',
-			retryable: false,
+			message: 'Server not found. Check your connection or the URL in Settings.',
+			retryable: true,
 		};
 	}
 	if (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') || msg.includes('ERR_NETWORK') || msg.includes('Failed to fetch')) {
@@ -153,4 +226,37 @@ export function classifyError(err: unknown): ClassifiedError {
 		message: msg,
 		retryable: false,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify an unknown error into a structured category.
+ *
+ * Uses a status-code-first approach: if the error object has a numeric
+ * `.status` property, classification is based on that code. Falls back
+ * to message pattern matching for errors without status codes.
+ */
+export function classifyError(err: unknown): ClassifiedError {
+	if (!(err instanceof Error)) {
+		return {
+			category: 'unknown',
+			message: 'An unexpected error occurred.',
+			retryable: false,
+		};
+	}
+
+	const msg = err.message;
+
+	// Status-code-first: check for .status property set by SyncClient/ChatClient
+	const status = (err as Error & { status?: number }).status;
+	if (typeof status === 'number' && status > 0) {
+		const result = classifyByStatusCode(status, msg);
+		if (result) return result;
+	}
+
+	// Fall back to message pattern matching
+	return classifyByMessage(msg);
 }

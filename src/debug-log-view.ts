@@ -107,6 +107,17 @@ export class LumenDebugLogView extends ItemView {
 			this.copyLogToClipboard();
 		});
 
+		// Save to File button
+		const saveBtn = controls.createEl('button', {
+			cls: 'lumen-debug-btn',
+			attr: { 'aria-label': 'Save log to file' },
+		});
+		setIcon(saveBtn, 'download');
+		saveBtn.createSpan({ text: 'Save' });
+		saveBtn.addEventListener('click', () => {
+			void this.saveLogToFile();
+		});
+
 		// Scrollable log area
 		this.logContainer = container.createDiv({ cls: 'lumen-debug-log' });
 
@@ -228,6 +239,31 @@ export class LumenDebugLogView extends ItemView {
 			this.countEl.textContent = visible === total
 				? `${total} entries`
 				: `${visible}/${total} entries`;
+		}
+	}
+
+	private async saveLogToFile(): Promise<void> {
+		const entries = logger.getEntries().filter(e => this.passesFilter(e.level));
+		const text = entries
+			.map(e => `${this.formatTimestamp(e.timestamp)} [${e.level.toUpperCase()}] ${e.message}`)
+			.join('\n');
+
+		const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+		const filename = `.lumen-debug-${ts}.log`;
+
+		try {
+			await this.app.vault.adapter.write(filename, text);
+			if (this.countEl) {
+				const prev = this.countEl.textContent;
+				this.countEl.textContent = `Saved: ${filename}`;
+				setTimeout(() => {
+					if (this.countEl) this.countEl.textContent = prev ?? '';
+				}, 3000);
+			}
+		} catch (err) {
+			if (this.countEl) {
+				this.countEl.textContent = 'Save failed';
+			}
 		}
 	}
 
