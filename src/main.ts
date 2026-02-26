@@ -379,6 +379,13 @@ export default class LumenPlugin extends Plugin {
 			if (this.settings.lastSyncAt) {
 				this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
 			}
+			if (result.success) {
+				this.syncStatusBar?.setSyncSummary(
+					result.filesUploaded,
+					result.filesDownloaded,
+					result.filesSkipped,
+				);
+			}
 			if (result.success && result.filesUploaded > 0) {
 				this.pluginTriggeredIndexing = true;
 				this.pollIndexingStatus();

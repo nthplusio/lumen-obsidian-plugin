@@ -260,6 +260,8 @@ export class SyncManager {
 				filesUploaded: 0,
 				filesDownloaded: 0,
 				filesDeleted: 0,
+				filesSkipped: 0,
+				filesRejected: 0,
 				errors: ['Offline — sync deferred'],
 				duration: 0,
 			};
@@ -272,6 +274,8 @@ export class SyncManager {
 				filesUploaded: 0,
 				filesDownloaded: 0,
 				filesDeleted: 0,
+				filesSkipped: 0,
+				filesRejected: 0,
 				errors: ['Sync already in progress'],
 				duration: 0,
 			};
@@ -329,7 +333,8 @@ export class SyncManager {
 			logger.info('Starting sync — hashing vault files...');
 			const manifest = await this.fileHasher.hashAllFiles(
 				(current, total) => {
-					this.reportProgress('hashing', current, total, 'Hashing files...');
+					const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+					this.reportProgress('hashing', current, total, `Hashing ${current}/${total} (${pct}%)`);
 				},
 			);
 
@@ -351,6 +356,8 @@ export class SyncManager {
 					filesUploaded: 0,
 					filesDownloaded: 0,
 					filesDeleted: 0,
+					filesSkipped: 0,
+					filesRejected: 0,
 					errors: ['MANIFEST_TOO_LARGE: Too many files for sync (max 10,000). Add exclude patterns on the server.'],
 					duration: Date.now() - startTime,
 				};
@@ -378,16 +385,25 @@ export class SyncManager {
 				`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
 			);
 
-			// Log files rejected by server at manifest stage (unsupported extensions)
-			if (manifestResponse.rejected_files?.length) {
-				logger.info(`Server rejected ${manifestResponse.rejected_files.length} file(s) from manifest:`);
-				for (const r of manifestResponse.rejected_files) {
-					logger.info(`  - ${r.path}: ${r.reason}`);
+			// Summarize manifest rejections grouped by extension (avoid noisy per-file logs)
+			const manifestRejected = manifestResponse.rejected_files ?? [];
+			if (manifestRejected.length > 0) {
+				const extCounts = new Map<string, number>();
+				for (const r of manifestRejected) {
+					const ext = r.path.includes('.') ? `.${r.path.split('.').pop()!.toLowerCase()}` : '(no ext)';
+					extCounts.set(ext, (extCounts.get(ext) ?? 0) + 1);
 				}
+				const breakdown = [...extCounts.entries()]
+					.sort((a, b) => b[1] - a[1])
+					.map(([ext, count]) => `${ext} ×${count}`)
+					.join(', ');
+				logger.info(`${manifestRejected.length} file(s) skipped (unsupported type: ${breakdown})`);
 			}
 
 			// ---- Phase 3: Upload requested files (batched) ----
 			let filesUploaded = 0;
+			let filesRejected = 0;
+			const filesSkipped = manifestRejected.length;
 			const errors: string[] = [];
 
 			if (manifestResponse.needed_files.length > 0) {
@@ -423,9 +439,9 @@ export class SyncManager {
 					filesUploaded += uploadResponse.accepted;
 
 					if (uploadResponse.rejected_files?.length) {
-						logger.warn(`Batch ${batchIdx}: ${uploadResponse.rejected_files.length} file(s) rejected`);
+						filesRejected += uploadResponse.rejected_files.length;
 						for (const rf of uploadResponse.rejected_files) {
-							logger.debug(`  Rejected: ${rf.path} — ${rf.reason}`);
+							logger.info(`Upload rejected: ${rf.path} — ${rf.reason}`);
 							errors.push(`${rf.path}: ${rf.reason}`);
 						}
 					}
@@ -434,10 +450,15 @@ export class SyncManager {
 					const avgBatchMs = this.batchDurations.reduce((a, b) => a + b, 0) / this.batchDurations.length;
 					const remainingBatches = totalBatches - (batchIdx + 1);
 					const etaSeconds = remainingBatches > 0 ? Math.ceil((avgBatchMs * remainingBatches) / 1000) : null;
+					const pct = allPaths.length > 0 ? Math.round((filesUploaded / allPaths.length) * 100) : 100;
 
-					this.reportProgress('uploading', filesUploaded, allPaths.length,
-						`Uploading ${filesUploaded}/${allPaths.length} (batch ${batchIdx + 1}/${totalBatches})${etaSeconds !== null ? ` ~${etaSeconds}s` : ''}`
-					);
+					let progressMsg: string;
+					if (totalBatches === 1) {
+						progressMsg = `Uploading ${filesUploaded}/${allPaths.length} (${pct}%)`;
+					} else {
+						progressMsg = `Uploading ${filesUploaded}/${allPaths.length} · batch ${batchIdx + 1}/${totalBatches}${etaSeconds !== null ? ` ~${etaSeconds}s` : ''}`;
+					}
+					this.reportProgress('uploading', filesUploaded, allPaths.length, progressMsg);
 				}
 			}
 
@@ -505,7 +526,7 @@ export class SyncManager {
 
 			this.finishSuccess();
 			logger.info(
-				`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted (${duration}ms)`,
+				`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted, ${filesSkipped} skipped, ${filesRejected} rejected (${duration}ms)`,
 			);
 
 			const result: SyncResult = {
@@ -513,10 +534,26 @@ export class SyncManager {
 				filesUploaded,
 				filesDownloaded,
 				filesDeleted: totalDeleted,
+				filesSkipped,
+				filesRejected,
 				errors,
 				duration,
 				conflicts: conflicts.length > 0 ? conflicts : undefined,
 			};
+
+			// Show summary Notice for manual syncs
+			if (manual) {
+				const parts: string[] = [];
+				if (filesUploaded > 0) parts.push(`${filesUploaded} uploaded`);
+				if (filesDownloaded > 0) parts.push(`${filesDownloaded} downloaded`);
+				if (totalDeleted > 0) parts.push(`${totalDeleted} deleted`);
+				if (parts.length === 0) parts.push('up to date');
+				let msg = `Lumen sync: ${parts.join(', ')}`;
+				if (filesSkipped > 0) msg += ` · ${filesSkipped} skipped (unsupported type)`;
+				if (filesRejected > 0) msg += ` · ${filesRejected} rejected`;
+				new Notice(msg);
+			}
+
 			this.notifySyncComplete(result);
 			return result;
 		} catch (error) {
@@ -565,6 +602,8 @@ export class SyncManager {
 				filesUploaded: 0,
 				filesDownloaded: 0,
 				filesDeleted: 0,
+				filesSkipped: 0,
+				filesRejected: 0,
 				errors: [classified.message],
 				duration,
 			};
@@ -620,11 +659,12 @@ export class SyncManager {
 			// Process in batches
 			for (let i = 0; i < paths.length; i += SyncManager.DOWNLOAD_BATCH_SIZE) {
 				const batch = paths.slice(i, i + SyncManager.DOWNLOAD_BATCH_SIZE);
+				const pct = paths.length > 0 ? Math.round((i / paths.length) * 100) : 0;
 				this.reportProgress(
 					'downloading',
 					i,
 					paths.length,
-					'Downloading files...',
+					`Downloading ${i}/${paths.length} (${pct}%)`,
 				);
 
 				try {
@@ -1014,6 +1054,8 @@ export class SyncManager {
 			filesUploaded: 0,
 			filesDownloaded: 0,
 			filesDeleted: 0,
+			filesSkipped: 0,
+			filesRejected: 0,
 			errors: ['Sync cancelled'],
 			duration,
 		};

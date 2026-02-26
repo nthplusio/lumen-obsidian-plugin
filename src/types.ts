@@ -50,6 +50,8 @@ export interface SyncResult {
 	filesUploaded: number;
 	filesDownloaded: number;
 	filesDeleted: number;
+	filesSkipped: number;
+	filesRejected: number;
 	errors: string[];
 	duration: number;
 	conflicts?: ConflictEntry[];

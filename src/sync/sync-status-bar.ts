@@ -44,6 +44,7 @@ export class SyncStatusBar {
 	private lastSyncAt: string | null = null;
 	private currentState: SyncState = 'idle';
 	private lastFilesUploaded = 0;
+	private lastSyncSummary: string | null = null;
 	private networkUnsubscribe: (() => void) | null = null;
 
 	constructor(statusBarEl: HTMLElement, onRetry: () => void, onCancel?: () => void) {
@@ -118,6 +119,16 @@ export class SyncStatusBar {
 		}
 	}
 
+	/** Set a sync summary to show in the success state. */
+	setSyncSummary(uploaded: number, downloaded: number, skipped: number): void {
+		const parts: string[] = [];
+		if (uploaded > 0) parts.push(`${uploaded} up`);
+		if (downloaded > 0) parts.push(`${downloaded} down`);
+		if (parts.length === 0) parts.push('up to date');
+		this.lastSyncSummary = parts.join(', ');
+		if (skipped > 0) this.lastSyncSummary += ` · ${skipped} skipped`;
+	}
+
 	/** Show indexing progress after a sync triggers reindexing. */
 	showIndexingProgress(indexed: number, total: number, percent: number, serverTriggered?: boolean): void {
 		const label = serverTriggered ? 'Server reindexing' : 'Indexing';
@@ -181,9 +192,11 @@ export class SyncStatusBar {
 					? `Downloading... ${progress.current}/${progress.total}`
 					: 'Downloading...';
 			case 'success':
-				return this.lastFilesUploaded > 0
-					? `Synced ${this.lastFilesUploaded} file(s)`
-					: 'Up to date';
+				return this.lastSyncSummary ?? (
+					this.lastFilesUploaded > 0
+						? `Synced ${this.lastFilesUploaded} file(s)`
+						: 'Up to date'
+				);
 			case 'error':
 				return 'Sync failed (click to retry)';
 			case 'offline':
