@@ -97,9 +97,11 @@ export class ConflictLogger {
 
 			const localContent = localContents?.get(c.path);
 			if (localContent) {
-				const snippet = localContent.length > 2000
+				const rawSnippet = localContent.length > 2000
 					? localContent.slice(0, 2000) + '\n... (truncated)'
 					: localContent;
+				// Escape triple-backtick sequences to prevent breaking out of the code block
+				const snippet = rawSnippet.replace(/```/g, '` ` `');
 				lines.push('');
 				lines.push('   <details>');
 				lines.push('   <summary>Overwritten local content</summary>');

@@ -132,7 +132,11 @@ export class SyncClient extends LumenHttpClient {
 		for (const [path, content] of files) {
 			const isText = typeof content === 'string';
 			const mimeType = isText ? 'text/plain' : 'application/octet-stream';
-			const safePath = path.replace(/["\\]/g, '_').replace(/[\r\n]/g, '');
+			// Sanitize for ASCII Content-Disposition; percent-encode non-ASCII chars
+			const safePath = path
+				.replace(/["\\]/g, '_')
+				.replace(/[\r\n]/g, '')
+				.replace(/[^\x20-\x7E]/g, (ch) => encodeURIComponent(ch));
 			const header = `--${boundary}\r\nContent-Disposition: form-data; name="${safePath}"; filename="${safePath}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
 			parts.push(encoder.encode(header));
 
@@ -285,6 +289,11 @@ export class SyncClient extends LumenHttpClient {
 		signal?: AbortSignal,
 	): Promise<SyncDownloadResponse> {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+		// Validate server-provided endpoint to prevent path injection
+		if (endpoint && !endpoint.startsWith('/api/')) {
+			throw new Error(`Unsafe download endpoint rejected: ${endpoint}`);
+		}
 
 		const url = endpoint
 			? `${this.baseUrl}${endpoint}`

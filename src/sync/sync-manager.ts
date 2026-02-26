@@ -281,322 +281,157 @@ export class SyncManager {
 			};
 		}
 
+		// Use a loop instead of recursion so that the finally block doesn't
+		// clobber state (abort controller, syncInProgress) for retried attempts.
+		let currentRetryCount = retryCount;
+		let resetCount = 0;
+		const MAX_RESETS = 2; // limit 410 resets to prevent infinite loops
+
 		this.syncInProgress = true;
-		this.syncAbortController = new AbortController();
-		const signal = this.syncAbortController.signal;
 		const startTime = Date.now();
 
 		try {
-			// ---- Phase 0: Auto-register if workspace isn't configured for plugin sync ----
-			if (!this.settings.deviceId) {
-				logger.info('No device ID found, registering plugin with server...');
-				const deviceId = crypto.randomUUID();
-				const deviceName = `${Platform.isDesktop ? 'desktop' : 'mobile'}-${deviceId.slice(0, 8)}`;
-				const vaultName = this.plugin.app.vault.getName();
+			while (true) {
+				this.syncAbortController = new AbortController();
+				const signal = this.syncAbortController.signal;
 
-				const registration = await this.syncClient.register(
-					deviceId,
-					deviceName,
-					this.plugin.manifest.version,
-					vaultName,
-					Platform.isDesktop ? 'desktop' : 'mobile',
-				);
-
-				// Cache exclude patterns from registration response
-				if (registration.exclude_patterns?.length) {
-					this.currentExcludePatterns = registration.exclude_patterns;
-					this.fileHasher.excludePatterns = registration.exclude_patterns;
-				}
-
-				this.settings.deviceId = deviceId;
-				logger.info('Plugin registered', { deviceId, workspaceId: registration.workspace_id });
-			}
-
-			// ---- Phase 0.5: Fetch sync config (exclude patterns + size limits) ----
-			try {
-				const syncConfig = await this.syncClient.getSyncStatus();
-				if (syncConfig.exclude_patterns?.length) {
-					this.fileHasher.excludePatterns = syncConfig.exclude_patterns;
-					this.currentExcludePatterns = syncConfig.exclude_patterns;
-				}
-				if (syncConfig.max_file_size_bytes) {
-					this.fileHasher.maxFileSize = syncConfig.max_file_size_bytes;
-					this.currentMaxFileSize = syncConfig.max_file_size_bytes;
-				}
-			} catch {
-				// Server may not support config fields yet — use defaults
-				logger.debug('Could not fetch sync config, using defaults');
-			}
-
-			// ---- Phase 1: Hash all files ----
-			this.setState('hashing');
-			logger.info('Starting sync — hashing vault files...');
-			const manifest = await this.fileHasher.hashAllFiles(
-				(current, total) => {
-					const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-					this.reportProgress('hashing', current, total, `Hashing ${current}/${total} (${pct}%)`);
-				},
-			);
-
-			// ---- Phase 2: Build and send manifest (V2) ----
-			this.setState('manifest');
-			logger.info(`Hashed ${manifest.size} files`);
-			const entries = this.buildManifestEntries(manifest);
-
-			if (entries.length > 10_000) {
-				new Notice(
-					`Too many files (${entries.length}) for sync. Max is 10,000. ` +
-					'Add exclude patterns on your Lumen server to reduce the file count.',
-					10000,
-				);
-				logger.error(`Manifest too large: ${entries.length} files exceeds 10,000 limit`);
-				this.setState('error');
-				const result: SyncResult = {
-					success: false,
-					filesUploaded: 0,
-					filesDownloaded: 0,
-					filesDeleted: 0,
-					filesSkipped: 0,
-					filesRejected: 0,
-					errors: ['MANIFEST_TOO_LARGE: Too many files for sync (max 10,000). Add exclude patterns on the server.'],
-					duration: Date.now() - startTime,
-				};
-				this.notifySyncComplete(result);
-				return result;
-			}
-
-			// Always send manifest — even empty manifests discover server changes
-
-			// Check for cancellation before manifest exchange
-			if (signal.aborted) {
-				return this.cancelledResult(startTime);
-			}
-
-			const manifestResponse = await this.syncClient.sendManifestV2(
-				entries,
-				this.settings.deviceId,
-				this.settings.lastSyncSeq,
-				this.settings.lastSyncCursor || undefined,
-				signal,
-			);
-
-			const serverChanges = manifestResponse.server_changes ?? [];
-			logger.info(
-				`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
-			);
-
-			// Summarize manifest rejections grouped by extension (avoid noisy per-file logs)
-			const manifestRejected = manifestResponse.rejected_files ?? [];
-			if (manifestRejected.length > 0) {
-				const extCounts = new Map<string, number>();
-				for (const r of manifestRejected) {
-					const ext = r.path.includes('.') ? `.${r.path.split('.').pop()!.toLowerCase()}` : '(no ext)';
-					extCounts.set(ext, (extCounts.get(ext) ?? 0) + 1);
-				}
-				const breakdown = [...extCounts.entries()]
-					.sort((a, b) => b[1] - a[1])
-					.map(([ext, count]) => `${ext} ×${count}`)
-					.join(', ');
-				logger.info(`${manifestRejected.length} file(s) skipped (unsupported type: ${breakdown})`);
-			}
-
-			// ---- Phase 3: Upload requested files (batched) ----
-			let filesUploaded = 0;
-			let filesRejected = 0;
-			const filesSkipped = manifestRejected.length;
-			const errors: string[] = [];
-
-			if (manifestResponse.needed_files.length > 0) {
-				this.setState('uploading');
-				const allPaths = manifestResponse.needed_files;
-				const totalBatches = Math.ceil(allPaths.length / UPLOAD_BATCH_SIZE);
-				this.batchDurations = [];
-
-				for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-					const batchStart = batchIdx * UPLOAD_BATCH_SIZE;
-					const batchPaths = allPaths.slice(batchStart, batchStart + UPLOAD_BATCH_SIZE);
-					const isLastBatch = batchIdx === totalBatches - 1;
-
-					const batchStartTime = Date.now();
-
-					// Check for cancellation before each batch
-					if (signal.aborted) {
+				try {
+					return await this.executeSyncAttempt(manual, signal, startTime);
+				} catch (error) {
+					// Handle cancellation cleanly — not an error
+					if (error instanceof Error && error.name === 'AbortError') {
 						return this.cancelledResult(startTime);
 					}
 
-					const uploadResponse = await this.uploadBatchWithRetry(
-						manifestResponse.sync_session_id,
-						batchPaths,
-						batchIdx,
-						isLastBatch,
-						signal,
-					);
+					const classified = classifyError(error);
+					const duration = Date.now() - startTime;
 
-					const batchMs = Date.now() - batchStartTime;
-					this.batchDurations.push(batchMs);
-					if (this.batchDurations.length > 5) this.batchDurations.shift();
-
-					filesUploaded += uploadResponse.accepted;
-
-					if (uploadResponse.rejected_files?.length) {
-						filesRejected += uploadResponse.rejected_files.length;
-						for (const rf of uploadResponse.rejected_files) {
-							logger.info(`Upload rejected: ${rf.path} — ${rf.reason}`);
-							errors.push(`${rf.path}: ${rf.reason}`);
-						}
+					// 410 Gone — sync session expired. Reset cursor+seq and restart.
+					if (classified.statusCode === 410 && resetCount < MAX_RESETS) {
+						resetCount++;
+						logger.warn(`410 Gone — resetting sync state and restarting (reset ${resetCount}/${MAX_RESETS})`);
+						this.settings.lastSyncCursor = '';
+						this.settings.lastSyncSeq = 0;
+						currentRetryCount = 0;
+						continue; // restart the loop
 					}
 
-					// Report progress with ETA
-					const avgBatchMs = this.batchDurations.reduce((a, b) => a + b, 0) / this.batchDurations.length;
-					const remainingBatches = totalBatches - (batchIdx + 1);
-					const etaSeconds = remainingBatches > 0 ? Math.ceil((avgBatchMs * remainingBatches) / 1000) : null;
-					const pct = allPaths.length > 0 ? Math.round((filesUploaded / allPaths.length) * 100) : 100;
-
-					let progressMsg: string;
-					if (totalBatches === 1) {
-						progressMsg = `Uploading ${filesUploaded}/${allPaths.length} (${pct}%)`;
-					} else {
-						progressMsg = `Uploading ${filesUploaded}/${allPaths.length} · batch ${batchIdx + 1}/${totalBatches}${etaSeconds !== null ? ` ~${etaSeconds}s` : ''}`;
+					// Retry transient errors with exponential backoff + jitter
+					if (classified.retryable && currentRetryCount < MAX_RETRIES) {
+						const baseMs = 1000 * Math.pow(2, currentRetryCount); // 1s, 2s, 4s
+						const jitter = Math.floor(Math.random() * baseMs * 0.5); // 0-50% jitter
+						const delayMs = baseMs + jitter;
+						logger.warn(
+							`Retryable error (attempt ${currentRetryCount + 1}/${MAX_RETRIES}), ` +
+							`retrying in ${delayMs}ms: ${classified.message}`,
+						);
+						await this.delay(delayMs);
+						currentRetryCount++;
+						continue; // restart the loop
 					}
-					this.reportProgress('uploading', filesUploaded, allPaths.length, progressMsg);
-				}
-			}
 
-			// ---- Phase 3.5: Pre-read conflict files BEFORE downloading (BUG-1 fix) ----
-			const conflictLocalContents = new Map<string, string>();
-			const v2Conflicts = manifestResponse.conflicts ?? [];
-			if (v2Conflicts.length > 0) {
-				await Promise.all(v2Conflicts.map(async (c) => {
-					const content = await this.readSingleFile(c.path);
-					if (content !== null) {
-						conflictLocalContents.set(c.path, content);
-					}
-				}));
-			}
+					// Non-retryable or max retries exceeded
+					this.setState('error');
+					logger.error('Sync failed:', classified.message);
 
-			// ---- Phase 4: Download server changes ----
-			let filesDownloaded = 0;
-			let filesDeletedLocally = 0;
-
-			const downloadResult = await this.handleServerChanges(manifestResponse, manifest);
-			filesDownloaded = downloadResult.downloaded;
-			filesDeletedLocally = downloadResult.deleted;
-			errors.push(...downloadResult.errors);
-
-			// ---- Phase 5: Handle conflicts ----
-			const conflicts: ConflictEntry[] = [];
-
-			if (v2Conflicts.length > 0) {
-				for (const c of v2Conflicts) {
-					conflicts.push({
-						path: c.path,
-						type: 'both-modified',
-						localHash: c.client_hash,
-						serverHash: c.server_hash,
-						resolution: 'server-kept',
-					});
-				}
-
-				await this.conflictLogger.logConflicts(
-					manifestResponse.sync_session_id,
-					conflicts,
-					conflictLocalContents,
-				);
-
-				if (conflicts.length > 0) {
 					new Notice(
-						`Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
+						`Lumen sync failed: ${classified.message}. ${Platform.isMobile ? 'Tap' : 'Click'} the status bar to retry.`,
+						NOTICE_DURATION_ERROR_MS,
 					);
+
+					const result: SyncResult = {
+						success: false,
+						filesUploaded: 0,
+						filesDownloaded: 0,
+						filesDeleted: 0,
+						filesSkipped: 0,
+						filesRejected: 0,
+						errors: [classified.message],
+						duration,
+					};
+					this.notifySyncComplete(result);
+					return result;
 				}
 			}
+		} finally {
+			this.syncAbortController = null;
+			this.syncInProgress = false;
+		}
+	}
 
-			// ---- Phase 6: Update cursor/seq and finalize ----
-			this.settings.lastSyncCursor = manifestResponse.new_cursor;
-			this.settings.lastSyncSeq = manifestResponse.current_seq;
-			this.settings.lastSyncAt = new Date().toISOString();
+	/**
+	 * Single sync attempt — extracted from executeSync so the outer loop
+	 * can safely retry without finally-block interference.
+	 */
+	private async executeSyncAttempt(
+		manual: boolean,
+		signal: AbortSignal,
+		startTime: number,
+	): Promise<SyncResult> {
+		// ---- Phase 0: Auto-register if workspace isn't configured for plugin sync ----
+		if (!this.settings.deviceId) {
+			logger.info('No device ID found, registering plugin with server...');
+			const deviceId = crypto.randomUUID();
+			const deviceName = `${Platform.isDesktop ? 'desktop' : 'mobile'}-${deviceId.slice(0, 8)}`;
+			const vaultName = this.plugin.app.vault.getName();
 
-			// BUG-2 fix: persist settings after every successful sync (not just manual)
-			await this.plugin.saveData(this.settings);
-
-			this.pendingChanges.clear();
-			this.deletedPaths.clear();
-
-			const duration = Date.now() - startTime;
-			const totalDeleted = manifestResponse.deleted_files.length + filesDeletedLocally;
-
-			this.finishSuccess();
-			logger.info(
-				`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted, ${filesSkipped} skipped, ${filesRejected} rejected (${duration}ms)`,
+			const registration = await this.syncClient.register(
+				deviceId,
+				deviceName,
+				this.plugin.manifest.version,
+				vaultName,
+				Platform.isDesktop ? 'desktop' : 'mobile',
 			);
 
-			const result: SyncResult = {
-				success: true,
-				filesUploaded,
-				filesDownloaded,
-				filesDeleted: totalDeleted,
-				filesSkipped,
-				filesRejected,
-				errors,
-				duration,
-				conflicts: conflicts.length > 0 ? conflicts : undefined,
-			};
-
-			// Show summary Notice for manual syncs
-			if (manual) {
-				const parts: string[] = [];
-				if (filesUploaded > 0) parts.push(`${filesUploaded} uploaded`);
-				if (filesDownloaded > 0) parts.push(`${filesDownloaded} downloaded`);
-				if (totalDeleted > 0) parts.push(`${totalDeleted} deleted`);
-				if (parts.length === 0) parts.push('up to date');
-				let msg = `Lumen sync: ${parts.join(', ')}`;
-				if (filesSkipped > 0) msg += ` · ${filesSkipped} skipped (unsupported type)`;
-				if (filesRejected > 0) msg += ` · ${filesRejected} rejected`;
-				new Notice(msg);
+			// Cache exclude patterns from registration response
+			if (registration.exclude_patterns?.length) {
+				this.currentExcludePatterns = registration.exclude_patterns;
+				this.fileHasher.excludePatterns = registration.exclude_patterns;
 			}
 
-			this.notifySyncComplete(result);
-			return result;
-		} catch (error) {
-			// Handle cancellation cleanly — not an error
-			if (error instanceof Error && error.name === 'AbortError') {
-				return this.cancelledResult(startTime);
+			this.settings.deviceId = deviceId;
+			logger.info('Plugin registered', { deviceId, workspaceId: registration.workspace_id });
+		}
+
+		// ---- Phase 0.5: Fetch sync config (exclude patterns + size limits) ----
+		try {
+			const syncConfig = await this.syncClient.getSyncStatus();
+			if (syncConfig.exclude_patterns?.length) {
+				this.fileHasher.excludePatterns = syncConfig.exclude_patterns;
+				this.currentExcludePatterns = syncConfig.exclude_patterns;
 			}
-
-			const classified = classifyError(error);
-			const duration = Date.now() - startTime;
-
-			// 410 Gone — sync session expired. Reset cursor+seq and auto-restart.
-			if (classified.statusCode === 410) {
-				logger.warn('410 Gone — resetting sync state and restarting');
-				this.settings.lastSyncCursor = '';
-				this.settings.lastSyncSeq = 0;
-				this.syncInProgress = false;
-				return this.executeSync(manual, 0);
+			if (syncConfig.max_file_size_bytes) {
+				this.fileHasher.maxFileSize = syncConfig.max_file_size_bytes;
+				this.currentMaxFileSize = syncConfig.max_file_size_bytes;
 			}
+		} catch {
+			// Server may not support config fields yet — use defaults
+			logger.debug('Could not fetch sync config, using defaults');
+		}
 
-			// Retry transient errors with exponential backoff + jitter
-			if (classified.retryable && retryCount < MAX_RETRIES) {
-				const baseMs = 1000 * Math.pow(2, retryCount); // 1s, 2s, 4s
-				const jitter = Math.floor(Math.random() * baseMs * 0.5); // 0-50% jitter
-				const delayMs = baseMs + jitter;
-				logger.warn(
-					`Retryable error (attempt ${retryCount + 1}/${MAX_RETRIES}), ` +
-					`retrying in ${delayMs}ms: ${classified.message}`,
-				);
-				this.syncInProgress = false;
-				await this.delay(delayMs);
-				return this.executeSync(manual, retryCount + 1);
-			}
+		// ---- Phase 1: Hash all files ----
+		this.setState('hashing');
+		logger.info('Starting sync — hashing vault files...');
+		const manifest = await this.fileHasher.hashAllFiles(
+			(current, total) => {
+				const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+				this.reportProgress('hashing', current, total, `Hashing ${current}/${total} (${pct}%)`);
+			},
+		);
 
-			// Non-retryable or max retries exceeded
-			this.setState('error');
-			logger.error('Sync failed:', classified.message);
+		// ---- Phase 2: Build and send manifest (V2) ----
+		this.setState('manifest');
+		logger.info(`Hashed ${manifest.size} files`);
+		const entries = this.buildManifestEntries(manifest);
 
+		if (entries.length > 10_000) {
 			new Notice(
-				`Lumen sync failed: ${classified.message}. ${Platform.isMobile ? 'Tap' : 'Click'} the status bar to retry.`,
-				NOTICE_DURATION_ERROR_MS,
+				`Too many files (${entries.length}) for sync. Max is 10,000. ` +
+				'Add exclude patterns on your Lumen server to reduce the file count.',
+				10000,
 			);
-
+			logger.error(`Manifest too large: ${entries.length} files exceeds 10,000 limit`);
+			this.setState('error');
 			const result: SyncResult = {
 				success: false,
 				filesUploaded: 0,
@@ -604,15 +439,204 @@ export class SyncManager {
 				filesDeleted: 0,
 				filesSkipped: 0,
 				filesRejected: 0,
-				errors: [classified.message],
-				duration,
+				errors: ['MANIFEST_TOO_LARGE: Too many files for sync (max 10,000). Add exclude patterns on the server.'],
+				duration: Date.now() - startTime,
 			};
 			this.notifySyncComplete(result);
 			return result;
-		} finally {
-			this.syncAbortController = null;
-			this.syncInProgress = false;
 		}
+
+		// Always send manifest — even empty manifests discover server changes
+
+		// Check for cancellation before manifest exchange
+		if (signal.aborted) {
+			return this.cancelledResult(startTime);
+		}
+
+		const manifestResponse = await this.syncClient.sendManifestV2(
+			entries,
+			this.settings.deviceId,
+			this.settings.lastSyncSeq,
+			this.settings.lastSyncCursor || undefined,
+			signal,
+		);
+
+		const serverChanges = manifestResponse.server_changes ?? [];
+		logger.info(
+			`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
+		);
+
+		// Summarize manifest rejections grouped by extension (avoid noisy per-file logs)
+		const manifestRejected = manifestResponse.rejected_files ?? [];
+		if (manifestRejected.length > 0) {
+			const extCounts = new Map<string, number>();
+			for (const r of manifestRejected) {
+				const ext = r.path.includes('.') ? `.${r.path.split('.').pop()!.toLowerCase()}` : '(no ext)';
+				extCounts.set(ext, (extCounts.get(ext) ?? 0) + 1);
+			}
+			const breakdown = [...extCounts.entries()]
+				.sort((a, b) => b[1] - a[1])
+				.map(([ext, count]) => `${ext} ×${count}`)
+				.join(', ');
+			logger.info(`${manifestRejected.length} file(s) skipped (unsupported type: ${breakdown})`);
+		}
+
+		// ---- Phase 3: Upload requested files (batched) ----
+		let filesUploaded = 0;
+		let filesRejected = 0;
+		const filesSkipped = manifestRejected.length;
+		const errors: string[] = [];
+
+		if (manifestResponse.needed_files.length > 0) {
+			this.setState('uploading');
+			const allPaths = manifestResponse.needed_files;
+			const totalBatches = Math.ceil(allPaths.length / UPLOAD_BATCH_SIZE);
+			this.batchDurations = [];
+
+			for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+				const batchStart = batchIdx * UPLOAD_BATCH_SIZE;
+				const batchPaths = allPaths.slice(batchStart, batchStart + UPLOAD_BATCH_SIZE);
+				const isLastBatch = batchIdx === totalBatches - 1;
+
+				const batchStartTime = Date.now();
+
+				// Check for cancellation before each batch
+				if (signal.aborted) {
+					return this.cancelledResult(startTime);
+				}
+
+				const uploadResponse = await this.uploadBatchWithRetry(
+					manifestResponse.sync_session_id,
+					batchPaths,
+					batchIdx,
+					isLastBatch,
+					signal,
+				);
+
+				const batchMs = Date.now() - batchStartTime;
+				this.batchDurations.push(batchMs);
+				if (this.batchDurations.length > 5) this.batchDurations.shift();
+
+				filesUploaded += uploadResponse.accepted;
+
+				if (uploadResponse.rejected_files?.length) {
+					filesRejected += uploadResponse.rejected_files.length;
+					for (const rf of uploadResponse.rejected_files) {
+						logger.info(`Upload rejected: ${rf.path} — ${rf.reason}`);
+						errors.push(`${rf.path}: ${rf.reason}`);
+					}
+				}
+
+				// Report progress with ETA
+				const avgBatchMs = this.batchDurations.reduce((a, b) => a + b, 0) / this.batchDurations.length;
+				const remainingBatches = totalBatches - (batchIdx + 1);
+				const etaSeconds = remainingBatches > 0 ? Math.ceil((avgBatchMs * remainingBatches) / 1000) : null;
+				const pct = allPaths.length > 0 ? Math.round((filesUploaded / allPaths.length) * 100) : 100;
+
+				let progressMsg: string;
+				if (totalBatches === 1) {
+					progressMsg = `Uploading ${filesUploaded}/${allPaths.length} (${pct}%)`;
+				} else {
+					progressMsg = `Uploading ${filesUploaded}/${allPaths.length} · batch ${batchIdx + 1}/${totalBatches}${etaSeconds !== null ? ` ~${etaSeconds}s` : ''}`;
+				}
+				this.reportProgress('uploading', filesUploaded, allPaths.length, progressMsg);
+			}
+		}
+
+		// ---- Phase 3.5: Pre-read conflict files BEFORE downloading (BUG-1 fix) ----
+		const conflictLocalContents = new Map<string, string>();
+		const v2Conflicts = manifestResponse.conflicts ?? [];
+		if (v2Conflicts.length > 0) {
+			await Promise.all(v2Conflicts.map(async (c) => {
+				const content = await this.readSingleFile(c.path);
+				if (content !== null) {
+					conflictLocalContents.set(c.path, content);
+				}
+			}));
+		}
+
+		// ---- Phase 4: Download server changes ----
+		let filesDownloaded = 0;
+		let filesDeletedLocally = 0;
+
+		const downloadResult = await this.handleServerChanges(manifestResponse, manifest);
+		filesDownloaded = downloadResult.downloaded;
+		filesDeletedLocally = downloadResult.deleted;
+		errors.push(...downloadResult.errors);
+
+		// ---- Phase 5: Handle conflicts ----
+		const conflicts: ConflictEntry[] = [];
+
+		if (v2Conflicts.length > 0) {
+			for (const c of v2Conflicts) {
+				conflicts.push({
+					path: c.path,
+					type: 'both-modified',
+					localHash: c.client_hash,
+					serverHash: c.server_hash,
+					resolution: 'server-kept',
+				});
+			}
+
+			await this.conflictLogger.logConflicts(
+				manifestResponse.sync_session_id,
+				conflicts,
+				conflictLocalContents,
+			);
+
+			if (conflicts.length > 0) {
+				new Notice(
+					`Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
+				);
+			}
+		}
+
+		// ---- Phase 6: Update cursor/seq and finalize ----
+		this.settings.lastSyncCursor = manifestResponse.new_cursor;
+		this.settings.lastSyncSeq = manifestResponse.current_seq;
+		this.settings.lastSyncAt = new Date().toISOString();
+
+		// BUG-2 fix: persist settings after every successful sync (not just manual)
+		await this.plugin.saveData(this.settings);
+
+		this.pendingChanges.clear();
+		this.deletedPaths.clear();
+
+		const duration = Date.now() - startTime;
+		const totalDeleted = manifestResponse.deleted_files.length + filesDeletedLocally;
+
+		this.finishSuccess();
+		logger.info(
+			`Sync complete: ${filesUploaded} uploaded, ${filesDownloaded} downloaded, ${totalDeleted} deleted, ${filesSkipped} skipped, ${filesRejected} rejected (${duration}ms)`,
+		);
+
+		const result: SyncResult = {
+			success: true,
+			filesUploaded,
+			filesDownloaded,
+			filesDeleted: totalDeleted,
+			filesSkipped,
+			filesRejected,
+			errors,
+			duration,
+			conflicts: conflicts.length > 0 ? conflicts : undefined,
+		};
+
+		// Show summary Notice for manual syncs
+		if (manual) {
+			const parts: string[] = [];
+			if (filesUploaded > 0) parts.push(`${filesUploaded} uploaded`);
+			if (filesDownloaded > 0) parts.push(`${filesDownloaded} downloaded`);
+			if (totalDeleted > 0) parts.push(`${totalDeleted} deleted`);
+			if (parts.length === 0) parts.push('up to date');
+			let msg = `Lumen sync: ${parts.join(', ')}`;
+			if (filesSkipped > 0) msg += ` · ${filesSkipped} skipped (unsupported type)`;
+			if (filesRejected > 0) msg += ` · ${filesRejected} rejected`;
+			new Notice(msg);
+		}
+
+		this.notifySyncComplete(result);
+		return result;
 	}
 
 	// -----------------------------------------------------------------------
@@ -689,7 +713,7 @@ export class SyncManager {
 							// re-encoded string. This avoids a mismatch for non-ASCII
 							// content (accented chars, CJK, emoji) where atob+TextEncoder
 							// round-trip produces different bytes than the upload path.
-							const bytes = Uint8Array.from(atob(file.content_base64), c => c.charCodeAt(0));
+							const bytes = SyncManager.decodeBase64(file.content_base64);
 							const hash = await FileHasher.computeSHA256Binary(bytes);
 							if (hash !== file.content_hash) {
 								const msg = `Hash mismatch for ${file.path}: expected ${file.content_hash.slice(0, 8)}…, got ${hash.slice(0, 8)}…`;
@@ -1128,5 +1152,20 @@ export class SyncManager {
 
 	private delay(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	/**
+	 * Decode base64 to Uint8Array, tolerant of whitespace and padding variants.
+	 * Avoids atob() which throws DOMException on any non-standard input.
+	 */
+	private static decodeBase64(b64: string): Uint8Array {
+		// Strip whitespace that some servers add (line wrapping, trailing newlines)
+		const cleaned = b64.replace(/\s/g, '');
+		const binaryString = atob(cleaned);
+		const bytes = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+			bytes[i] = binaryString.charCodeAt(i);
+		}
+		return bytes;
 	}
 }

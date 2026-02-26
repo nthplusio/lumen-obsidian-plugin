@@ -470,11 +470,11 @@ describe('Sync Flow Integration', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// 4. Session expiry (410) — non-retryable error
+	// 4. Session expiry (410) — resets cursor and retries (max 2 resets)
 	// -----------------------------------------------------------------------
 
 	describe('session expiry', () => {
-		it('handles 410 as non-retryable and transitions to error immediately', async () => {
+		it('handles 410 by resetting cursor and retrying, then errors after max resets', async () => {
 			const files = [createMockTFile('notes/expired.md', 1000, 50)];
 			await buildStack(files);
 
@@ -487,8 +487,8 @@ describe('Sync Flow Integration', () => {
 			expect(result.success).toBe(false);
 			expect(result.errors[0]).toContain('Sync session expired');
 			expect(manager.getState()).toBe('error');
-			// Should NOT retry — 410 is not retryable
-			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(1);
+			// 1 initial + 2 reset retries = 3 total calls before giving up
+			expect(syncClient.sendManifestV2).toHaveBeenCalledTimes(3);
 		});
 	});
 

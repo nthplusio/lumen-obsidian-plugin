@@ -35,10 +35,9 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 
 		// Listen for settings changes (e.g., onboarding completes)
 		useEffect(() => {
-			const check = () => setConfigured(!!context.plugin.settings.apiKey);
-			// Poll settings at a low frequency to detect changes from onboarding
-			const interval = setInterval(check, 500);
-			return () => clearInterval(interval);
+			return context.plugin.onSettingsChange(() => {
+				setConfigured(!!context.plugin.settings.apiKey);
+			});
 		}, [context.plugin]);
 
 		// Expose imperative handle for commands

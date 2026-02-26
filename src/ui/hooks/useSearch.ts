@@ -179,7 +179,7 @@ export function useSearch(): UseSearchReturn {
 		if (state.query.trim()) {
 			executeSearch(state.query.trim());
 		}
-	}, [state.hybridMode, state.selectedTags]);
+	}, [state.hybridMode, state.selectedTags, executeSearch]);
 
 	const toggleTagFilter = useCallback(() => {
 		dispatch({ type: 'TOGGLE_TAG_FILTER' });

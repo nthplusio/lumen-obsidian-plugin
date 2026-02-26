@@ -34,6 +34,7 @@ export default class LumenPlugin extends Plugin {
 	/** Recent sync conflicts for the UI — cleared when user dismisses */
 	recentConflicts: ConflictEntry[] = [];
 	private conflictListeners: Array<(conflicts: ConflictEntry[]) => void> = [];
+	private settingsListeners: Array<() => void> = [];
 
 	/** Register a listener for conflict changes (returns unsubscribe fn) */
 	onConflictsChange(cb: (conflicts: ConflictEntry[]) => void): () => void {
@@ -45,6 +46,18 @@ export default class LumenPlugin extends Plugin {
 
 	private notifyConflictListeners(): void {
 		for (const cb of this.conflictListeners) cb(this.recentConflicts);
+	}
+
+	/** Register a listener for settings changes (returns unsubscribe fn) */
+	onSettingsChange(cb: () => void): () => void {
+		this.settingsListeners.push(cb);
+		return () => {
+			this.settingsListeners = this.settingsListeners.filter(l => l !== cb);
+		};
+	}
+
+	private notifySettingsListeners(): void {
+		for (const cb of this.settingsListeners) cb();
 	}
 
 	/** Clear all recent conflicts (user dismissed) */
@@ -294,6 +307,9 @@ export default class LumenPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+
+		// Notify settings listeners (e.g. React components)
+		this.notifySettingsListeners();
 
 		// Keep API client in sync with settings
 		this.apiClient.updateSettings(this.settings.apiKey);
