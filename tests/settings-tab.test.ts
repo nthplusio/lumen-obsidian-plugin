@@ -199,20 +199,7 @@ function createMockPlugin(settingsOverrides: Partial<LumenSettings> = {}) {
 		settings: createSettings(settingsOverrides),
 		saveSettings: vi.fn().mockResolvedValue(undefined),
 		triggerSync: vi.fn().mockResolvedValue(undefined),
-		fetchAndApplyConfig: vi.fn().mockResolvedValue({
-			workspace_name: 'Test Workspace',
-			workspace_id: 'ws-001',
-			sync_enabled: true,
-			sync_interval_minutes: 5,
-			event_sync_enabled: true,
-			exclude_patterns: [],
-			max_file_size_bytes: 50 * 1024 * 1024,
-			allowed_extensions: ['.md'],
-			indexing_schedule: 'nightly',
-			features: { chat_enabled: true, deep_research_enabled: false },
-		}),
 		activateDebugLogView: vi.fn(),
-		workspaceConfig: null as any,
 		apiClient: {
 			testConnection: vi.fn().mockResolvedValue({
 				status: 'healthy',
@@ -400,9 +387,7 @@ describe('LumenSettingTab', () => {
 		it('shows success notice on successful connection', async () => {
 			const s = findSetting('Test Connection');
 			await s._buttons[0]._onClick();
-			expect(Notice).toHaveBeenCalledWith(
-				expect.stringContaining('Connected to'),
-			);
+			expect(Notice).toHaveBeenCalledWith('Connected!');
 		});
 
 		it('shows error notice on connection failure', async () => {
@@ -430,51 +415,8 @@ describe('LumenSettingTab', () => {
 		});
 	});
 
-	// -------------------------------------------------------------------
-	// Vault Sync settings (read-only, server-managed)
-	// -------------------------------------------------------------------
-
-	describe('Vault Sync settings', () => {
-		it('creates automatic sync toggle (disabled)', () => {
-			const s = findSetting('Automatic sync');
-			expect(s).toBeDefined();
-			expect(s._toggles).toHaveLength(1);
-			expect(s._toggles[0]._disabled).toBe(true);
-		});
-
-		it('sync toggle is initialized with server default (true)', () => {
-			const s = findSetting('Automatic sync');
-			expect(s._toggles[0]._value).toBe(true);
-		});
-
-		it('creates sync interval dropdown (disabled)', () => {
-			const s = findSetting('Sync interval');
-			expect(s).toBeDefined();
-			expect(s._dropdowns).toHaveLength(1);
-			expect(s._dropdowns[0]._disabled).toBe(true);
-		});
-
-		it('shows exclude patterns when config has them', () => {
-			mockPlugin.workspaceConfig = {
-				workspace_name: 'Test',
-				workspace_id: 'ws-001',
-				sync_enabled: true,
-				sync_interval_minutes: 5,
-				event_sync_enabled: true,
-				exclude_patterns: ['.obsidian/', '.trash/'],
-				max_file_size_bytes: 50 * 1024 * 1024,
-				allowed_extensions: ['.md'],
-				indexing_schedule: 'nightly',
-				features: { chat_enabled: true, deep_research_enabled: false },
-			};
-			settingInstances.length = 0;
-			tab.display();
-
-			const s = findSetting('Exclude patterns');
-			expect(s).toBeDefined();
-			expect(s._desc).toContain('.obsidian/');
-		});
-	});
+	// Vault Sync settings are now managed by the sync manager directly
+	// (registration + sync status endpoints), not via a workspace config fetch.
 
 	// -------------------------------------------------------------------
 	// Sync action buttons

@@ -23,16 +23,13 @@ import { FileHasher } from './sync/file-hasher';
 import { ConflictLogger } from './sync/conflict-logger';
 import { logger } from './utils/logger';
 import { networkStatus } from './utils/network-status';
-import { DEFAULT_SETTINGS, type ConflictEntry, type LumenSettings, type WorkspaceConfig } from './types';
+import { DEFAULT_SETTINGS, type ConflictEntry, type LumenSettings } from './types';
 
 export default class LumenPlugin extends Plugin {
 	settings: LumenSettings = DEFAULT_SETTINGS;
 	apiClient: ApiClient = new ApiClient('');
 	chatClient: ChatClient | null = null;
 	api: LumenSearchAPI | null = null;
-
-	/** Server-managed workspace config (fetched, not persisted) */
-	workspaceConfig: WorkspaceConfig | null = null;
 
 	/** Recent sync conflicts for the UI — cleared when user dismisses */
 	recentConflicts: ConflictEntry[] = [];
@@ -64,7 +61,6 @@ export default class LumenPlugin extends Plugin {
 	conflictLogger: ConflictLogger | null = null;
 	private indexingPollTimer: ReturnType<typeof setInterval> | null = null;
 	private backgroundPollTimer: ReturnType<typeof setInterval> | null = null;
-	private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private pluginTriggeredIndexing = false;
 
 	async onload(): Promise<void> {
@@ -93,10 +89,8 @@ export default class LumenPlugin extends Plugin {
 			}
 		}
 
-		// Fetch workspace config and initialize clients if configured
+		// Initialize clients if configured
 		if (this.settings.apiKey && this.settings.workspaceId) {
-			await this.fetchAndApplyConfig();
-
 			this.chatClient = new ChatClient(
 				this.settings.apiKey,
 				this.settings.workspaceId,
@@ -107,9 +101,6 @@ export default class LumenPlugin extends Plugin {
 
 		// Initialize sync if configured
 		await this.initializeSync();
-
-		// Start periodic config refresh (every 5 minutes)
-		this.startConfigRefresh();
 
 		// Register the main sidebar view (Search + Chat)
 		this.registerView(
@@ -288,7 +279,6 @@ export default class LumenPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		this.stopConfigRefresh();
 		this.stopBackgroundPoll();
 		this.stopIndexingPoll();
 		this.syncStatusBar?.destroy();
@@ -333,66 +323,12 @@ export default class LumenPlugin extends Plugin {
 			);
 		}
 
-		// Auto-sync is now driven by server config, not local settings
-		if (this.syncManager && this.workspaceConfig) {
-			if (this.workspaceConfig.sync_enabled && this.workspaceConfig.sync_interval_minutes > 0) {
-				this.syncManager.startAutoSync();
-			} else {
-				this.syncManager.stopAutoSync();
-			}
-		}
-
 		// If sync wasn't initialized but now has credentials, try initializing
 		if (!this.syncManager && this.isSyncConfigured()) {
 			await this.initializeSync();
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// Workspace config (server-managed)
-	// -----------------------------------------------------------------------
-
-	/** Fetch workspace config from the server and apply it. */
-	async fetchAndApplyConfig(): Promise<WorkspaceConfig | null> {
-		if (!this.settings.apiKey || !this.settings.workspaceId) return null;
-
-		try {
-			const config = await this.apiClient.fetchWorkspaceConfig(this.settings.workspaceId);
-			this.workspaceConfig = config;
-			logger.info(`Config fetched for workspace "${config.workspace_name}"`);
-
-			// Apply sync config to the sync manager if it exists
-			if (this.syncManager) {
-				this.syncManager.applySyncConfig(config);
-				if (config.sync_enabled && config.sync_interval_minutes > 0) {
-					this.syncManager.startAutoSync();
-				} else {
-					this.syncManager.stopAutoSync();
-				}
-			}
-
-			return config;
-		} catch (err) {
-			logger.warn(`Failed to fetch workspace config: ${err instanceof Error ? err.message : String(err)}`);
-			return null;
-		}
-	}
-
-	/** Start periodic config refresh (every 5 minutes). */
-	private startConfigRefresh(): void {
-		if (this.configRefreshTimer) return;
-		this.configRefreshTimer = setInterval(() => {
-			this.fetchAndApplyConfig().catch(() => {});
-		}, 5 * 60 * 1000);
-	}
-
-	/** Stop periodic config refresh. */
-	private stopConfigRefresh(): void {
-		if (this.configRefreshTimer) {
-			clearInterval(this.configRefreshTimer);
-			this.configRefreshTimer = null;
-		}
-	}
 
 	// -----------------------------------------------------------------------
 	// Sync initialization
@@ -459,11 +395,9 @@ export default class LumenPlugin extends Plugin {
 			this.syncStatusBar.setLastSyncAt(this.settings.lastSyncAt);
 		}
 
-		// Auto-sync is driven by server config
-		const syncEnabled = this.workspaceConfig?.sync_enabled ?? true;
-		if (syncEnabled) {
-			this.syncManager.startAutoSync();
-		}
+		// Start auto-sync — the sync manager gets its config from the server
+		// during each sync cycle (registration + sync status endpoints)
+		this.syncManager.startAutoSync();
 
 		logger.info('Sync initialized');
 

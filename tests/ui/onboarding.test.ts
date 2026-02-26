@@ -28,7 +28,6 @@ describe('OnboardingView', () => {
 		const content = readFileSync('src/ui/components/onboarding/OnboardingView.tsx', 'utf-8');
 		expect(content).toContain('workspace_id');
 		expect(content).toContain('testConnection');
-		expect(content).toContain('fetchAndApplyConfig');
 	});
 
 	it('reverts API key on connection failure', async () => {

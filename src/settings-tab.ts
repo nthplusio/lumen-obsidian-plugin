@@ -115,16 +115,12 @@ export class LumenSettingTab extends PluginSettingTab {
 								await this.plugin.saveSettings();
 							}
 
-							// Fetch workspace config
-							const config = await this.plugin.fetchAndApplyConfig();
-							const workspaceName = config?.workspace_name ?? 'Unknown';
-
 							this.showConnectionStatus(
 								'success',
-								`Connected to "${workspaceName}" \u2014 ${chunkCount} chunks indexed`,
+								`Connected \u2014 ${chunkCount} chunks indexed`,
 							);
 
-							new Notice(`Connected to ${workspaceName}!`);
+							new Notice('Connected!');
 
 							// Re-render to show updated sync info
 							this.display();
@@ -146,38 +142,6 @@ export class LumenSettingTab extends PluginSettingTab {
 
 	private renderSyncSection(containerEl: HTMLElement): void {
 		const content = this.createSection(containerEl, 'Vault Sync', true);
-
-		const config = this.plugin.workspaceConfig;
-
-		// Sync status (from server config)
-		const syncEnabled = config?.sync_enabled ?? true;
-		const syncInterval = config?.sync_interval_minutes ?? 5;
-
-		new Setting(content)
-			.setName('Automatic sync')
-			.setDesc('Managed from your Lumen dashboard')
-			.addToggle(toggle => {
-				toggle.setValue(syncEnabled).setDisabled(true);
-			});
-
-		new Setting(content)
-			.setName('Sync interval')
-			.setDesc('Managed from your Lumen dashboard')
-			.addDropdown(dropdown => {
-				dropdown
-					.addOption(String(syncInterval), `Every ${syncInterval} minute${syncInterval !== 1 ? 's' : ''}`)
-					.setValue(String(syncInterval))
-					.setDisabled(true);
-				// Show the current value as a disabled dropdown
-				dropdown.selectEl.style.opacity = '0.7';
-			});
-
-		// Exclude patterns (read-only from server)
-		if (config?.exclude_patterns && config.exclude_patterns.length > 0) {
-			new Setting(content)
-				.setName('Exclude patterns')
-				.setDesc(`Managed from dashboard: ${config.exclude_patterns.join(', ')}`);
-		}
 
 		// Sync info
 		this.renderSyncInfo(content);
@@ -291,13 +255,7 @@ export class LumenSettingTab extends PluginSettingTab {
 		if (!this._connectionStatusEl) return;
 		this._connectionStatusEl.empty();
 
-		const config = this.plugin.workspaceConfig;
-		if (config) {
-			this._connectionStatusEl.createEl('div', {
-				text: `Connected to "${config.workspace_name}"`,
-				cls: 'lumen-status-success',
-			});
-		} else if (this.plugin.settings.apiKey) {
+		if (this.plugin.settings.apiKey) {
 			this._connectionStatusEl.createEl('div', {
 				text: 'Not connected \u2014 click Test Connection to verify',
 				cls: 'lumen-status-info',

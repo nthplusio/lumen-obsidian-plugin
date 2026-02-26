@@ -38,27 +38,6 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 };
 
 // ============================================================================
-// Server-Managed Config (fetched from GET /api/workspaces/:id/config)
-// ============================================================================
-
-/** Workspace configuration fetched from the server — not persisted locally */
-export interface WorkspaceConfig {
-	workspace_name: string;
-	workspace_id: string;
-	sync_enabled: boolean;
-	sync_interval_minutes: number;
-	event_sync_enabled: boolean;
-	exclude_patterns: string[];
-	max_file_size_bytes: number;
-	allowed_extensions: string[];
-	indexing_schedule: string;
-	features: {
-		chat_enabled: boolean;
-		deep_research_enabled: boolean;
-	};
-}
-
-// ============================================================================
 // Sync State Machine
 // ============================================================================
 

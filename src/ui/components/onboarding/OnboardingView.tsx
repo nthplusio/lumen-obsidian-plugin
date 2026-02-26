@@ -57,10 +57,6 @@ export function OnboardingView() {
 				await plugin.saveSettings();
 			}
 
-			// Fetch workspace config
-			const config = await plugin.fetchAndApplyConfig();
-			const workspaceName = config?.workspace_name ?? 'your workspace';
-
 			// Initialize chat client if not already
 			if (!plugin.chatClient && plugin.settings.workspaceId) {
 				const { ChatClient } = await import('../../../chat-client');
@@ -71,7 +67,7 @@ export function OnboardingView() {
 			}
 
 			setConnectionResult({
-				workspaceName,
+				workspaceName: 'your workspace',
 				chunkCount: status.chunk_count ?? 0,
 			});
 			setStep('ready');

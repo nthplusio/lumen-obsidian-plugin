@@ -82,7 +82,7 @@ export class SyncManager {
 	// Cancellation
 	private syncAbortController: AbortController | null = null;
 
-	// Sync config (set from server-managed WorkspaceConfig)
+	// Sync config (applied via applySyncConfig)
 	private syncEnabled = true;
 	private autoSyncIntervalMinutes = 5;
 	private eventSyncEnabled = true;

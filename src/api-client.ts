@@ -6,7 +6,7 @@
  */
 
 import { requestUrl } from 'obsidian';
-import type { SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions, WorkspaceConfig } from './types';
+import type { SearchResult, ServerStatus, DocumentContext, SimilarDocumentOptions } from './types';
 import { LumenHttpClient } from './http-client';
 
 /**
@@ -32,16 +32,6 @@ export class ApiClient extends LumenHttpClient {
 			headers: this.headers,
 		});
 		return response.json as ServerStatus;
-	}
-
-	/** Fetch workspace config from the server */
-	async fetchWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig> {
-		const response = await requestUrl({
-			url: `${this.baseUrl}/api/workspaces/${workspaceId}/config`,
-			method: 'GET',
-			headers: this.headers,
-		});
-		return response.json as WorkspaceConfig;
 	}
 
 	/** Semantic search across the vault */
