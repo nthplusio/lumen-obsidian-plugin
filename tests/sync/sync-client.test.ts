@@ -3,9 +3,9 @@
  *
  * Tests the HTTP client for all sync endpoints:
  *   - POST /sync/register (requestUrl)
- *   - POST /sync/manifest (fetch)
+ *   - POST /sync/manifest (requestUrl)
  *   - POST /sync/upload (fetch with manual multipart)
- *   - POST /sync/download (fetch)
+ *   - POST /sync/download (requestUrl)
  *   - GET  /sync/status (requestUrl)
  */
 
@@ -357,7 +357,7 @@ describe('SyncClient', () => {
 	describe('error responses', () => {
 		it('includes status code in error for manifest auth failures', async () => {
 			const client = createClient();
-			mockFetchFailure(401, 'Unauthorized');
+			mockRequestUrlFailure(401, 'Unauthorized');
 
 			await expect(client.sendManifestV2([], 'device-001', 0)).rejects.toThrow('401');
 		});
@@ -400,13 +400,13 @@ describe('SyncClient', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// sendManifestV2 (uses fetch)
+	// sendManifestV2 (uses requestUrl)
 	// -----------------------------------------------------------------------
 
 	describe('sendManifestV2', () => {
 		it('sends V2 fields: protocol_version, device_id, last_sync_seq', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
+			mockRequestUrlSuccess(200, manifestResponseV2);
 
 			const files = [{
 				path: 'notes/local-new.md',
@@ -418,8 +418,8 @@ describe('SyncClient', () => {
 
 			await client.sendManifestV2(files, 'device-001', 35, 'prev_cursor');
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			const body = JSON.parse(options.body);
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
 			expect(body.protocol_version).toBe(2);
 			expect(body.device_id).toBe('device-001');
 			expect(body.last_sync_seq).toBe(35);
@@ -429,40 +429,40 @@ describe('SyncClient', () => {
 
 		it('omits cursor when not provided', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
+			mockRequestUrlSuccess(200, manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			const body = JSON.parse(options.body);
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
 			expect(body.cursor).toBeUndefined();
 		});
 
 		it('sends to /sync/manifest endpoint', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
+			mockRequestUrlSuccess(200, manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const [url, options] = mockFetch.mock.calls[0]!;
-			expect(url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
-			expect(options.method).toBe('POST');
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`);
+			expect(call.method).toBe('POST');
 		});
 
 		it('includes X-API-Key and Content-Type headers', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
+			mockRequestUrlSuccess(200, manifestResponseV2);
 
 			await client.sendManifestV2([], 'device-001', 0);
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			expect(options.headers['X-API-Key']).toBe(API_KEY);
-			expect(options.headers['Content-Type']).toBe('application/json');
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.headers['X-API-Key']).toBe(API_KEY);
+			expect(call.headers['Content-Type']).toBe('application/json');
 		});
 
 		it('returns V2 response with server_changes, conflicts, download_endpoint', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
+			mockRequestUrlSuccess(200, manifestResponseV2);
 
 			const result = await client.sendManifestV2([], 'device-001', 35);
 
@@ -475,7 +475,7 @@ describe('SyncClient', () => {
 
 		it('throws on non-200 status', async () => {
 			const client = createClient();
-			mockFetchFailure(500, 'Internal server error');
+			mockRequestUrlFailure(500, 'Internal server error');
 
 			await expect(client.sendManifestV2([], 'device-001', 0))
 				.rejects.toThrow(/V2 manifest exchange failed.*500/);
@@ -483,78 +483,78 @@ describe('SyncClient', () => {
 
 		it('throws on 401 (expired API key)', async () => {
 			const client = createClient();
-			mockFetchFailure(401, 'Unauthorized');
+			mockRequestUrlFailure(401, 'Unauthorized');
 
 			await expect(client.sendManifestV2([], 'device-001', 0))
 				.rejects.toThrow(/V2 manifest exchange failed.*401/);
 		});
 
-		it('passes AbortSignal to fetch', async () => {
+		it('throws immediately if signal is already aborted', async () => {
 			const client = createClient();
-			mockFetchSuccess(manifestResponseV2);
 			const controller = new AbortController();
+			controller.abort();
 
-			await client.sendManifestV2([], 'device-001', 0, undefined, controller.signal);
+			await expect(client.sendManifestV2([], 'device-001', 0, undefined, controller.signal))
+				.rejects.toThrow('Aborted');
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			expect(options.signal).toBe(controller.signal);
+			expect(mockRequestUrl).not.toHaveBeenCalled();
 		});
 	});
 
 	// -----------------------------------------------------------------------
-	// downloadFiles (uses fetch)
+	// downloadFiles (uses requestUrl)
 	// -----------------------------------------------------------------------
 
 	describe('downloadFiles', () => {
 		it('sends session ID and paths to download endpoint', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
+			mockRequestUrlSuccess(200, downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			expect(options.method).toBe('POST');
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.method).toBe('POST');
 
-			const body = JSON.parse(options.body);
+			const body = JSON.parse(call.body);
 			expect(body.sync_session_id).toBe('session-v2');
 			expect(body.paths).toEqual(['notes/server-edit.md']);
 		});
 
 		it('uses server-provided endpoint when given (BUG-3 fix)', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
+			mockRequestUrlSuccess(200, downloadResponse);
 
 			const serverEndpoint = `/api/workspaces/${WORKSPACE_ID}/sync/download`;
 			await client.downloadFiles('session-v2', ['notes/server-edit.md'], serverEndpoint);
 
-			const [url] = mockFetch.mock.calls[0]!;
-			expect(url).toBe(`${API_URL}${serverEndpoint}`);
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}${serverEndpoint}`);
 		});
 
 		it('falls back to default /sync/download when endpoint not provided', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
+			mockRequestUrlSuccess(200, downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
-			const [url] = mockFetch.mock.calls[0]!;
-			expect(url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/download`);
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.url).toBe(`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/download`);
 		});
 
 		it('includes X-API-Key and Content-Type headers', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
+			mockRequestUrlSuccess(200, downloadResponse);
 
 			await client.downloadFiles('session-v2', ['notes/file.md']);
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			expect(options.headers['X-API-Key']).toBe(API_KEY);
-			expect(options.headers['Content-Type']).toBe('application/json');
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			expect(call.headers['X-API-Key']).toBe(API_KEY);
+			expect(call.headers['Content-Type']).toBe('application/json');
 		});
 
 		it('returns files with base64 content', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
+			mockRequestUrlSuccess(200, downloadResponse);
 
 			const result = await client.downloadFiles('session-v2', ['notes/server-edit.md']);
 
@@ -572,7 +572,7 @@ describe('SyncClient', () => {
 					{ path: 'c.md', content_base64: btoa('CCC'), content_hash: 'c'.repeat(64), size_bytes: 3 },
 				],
 			};
-			mockFetchSuccess(multiFileResponse);
+			mockRequestUrlSuccess(200, multiFileResponse);
 
 			const result = await client.downloadFiles('session-v2', ['a.md', 'b.md', 'c.md']);
 
@@ -581,19 +581,19 @@ describe('SyncClient', () => {
 
 		it('sends multiple paths in request body', async () => {
 			const client = createClient();
-			mockFetchSuccess({ files: [] });
+			mockRequestUrlSuccess(200, { files: [] });
 
 			const paths = ['notes/a.md', 'notes/b.md', 'folder/c.md'];
 			await client.downloadFiles('session-v2', paths);
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			const body = JSON.parse(options.body);
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
 			expect(body.paths).toEqual(paths);
 		});
 
 		it('throws on non-200 status', async () => {
 			const client = createClient();
-			mockFetchFailure(404, 'Session not found');
+			mockRequestUrlFailure(404, 'Session not found');
 
 			await expect(client.downloadFiles('bad-session', ['notes/file.md']))
 				.rejects.toThrow(/Download failed.*404/);
@@ -601,21 +601,21 @@ describe('SyncClient', () => {
 
 		it('throws on server error', async () => {
 			const client = createClient();
-			mockFetchFailure(500, 'Internal error');
+			mockRequestUrlFailure(500, 'Internal error');
 
 			await expect(client.downloadFiles('session-v2', ['notes/file.md']))
 				.rejects.toThrow(/Download failed.*500/);
 		});
 
-		it('passes AbortSignal to fetch', async () => {
+		it('throws immediately if signal is already aborted', async () => {
 			const client = createClient();
-			mockFetchSuccess(downloadResponse);
 			const controller = new AbortController();
+			controller.abort();
 
-			await client.downloadFiles('session-v2', ['notes/file.md'], undefined, controller.signal);
+			await expect(client.downloadFiles('session-v2', ['notes/file.md'], undefined, controller.signal))
+				.rejects.toThrow('Aborted');
 
-			const [, options] = mockFetch.mock.calls[0]!;
-			expect(options.signal).toBe(controller.signal);
+			expect(mockRequestUrl).not.toHaveBeenCalled();
 		});
 	});
 
@@ -634,24 +634,24 @@ describe('SyncClient', () => {
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/register`,
 			);
 
-			// Manifest (fetch)
-			mockFetchSuccess(manifestResponseV2);
+			// Manifest (requestUrl)
+			mockRequestUrlSuccess(200, manifestResponseV2);
 			await client.sendManifestV2([], 'device-001', 0);
-			expect(mockFetch.mock.calls[0]![0]).toBe(
+			expect((mockRequestUrl.mock.calls[1]![0] as any).url).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/manifest`,
 			);
 
 			// Status (requestUrl)
 			mockRequestUrlSuccess(200, statusResponse);
 			await client.getSyncStatus();
-			expect((mockRequestUrl.mock.calls[1]![0] as any).url).toBe(
+			expect((mockRequestUrl.mock.calls[2]![0] as any).url).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/status`,
 			);
 
 			// Upload (fetch)
 			mockFetchSuccess(uploadResponse);
 			await client.uploadFiles('session', new Map());
-			expect(mockFetch.mock.calls[1]![0]).toBe(
+			expect(mockFetch.mock.calls[0]![0]).toBe(
 				`${API_URL}/api/workspaces/${WORKSPACE_ID}/sync/upload`,
 			);
 		});

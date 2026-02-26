@@ -20,6 +20,7 @@ export class LumenSettingTab extends PluginSettingTab {
 	private _lastSyncValueEl: HTMLElement | null = null;
 	private _syncStateValueEl: HTMLElement | null = null;
 	private _connectionStatusEl: HTMLElement | null = null;
+	private _lastConnectionResult: { type: 'success' | 'error' | 'info'; message: string } | null = null;
 
 	constructor(app: App, plugin: LumenPlugin) {
 		super(app, plugin);
@@ -255,7 +256,12 @@ export class LumenSettingTab extends PluginSettingTab {
 		if (!this._connectionStatusEl) return;
 		this._connectionStatusEl.empty();
 
-		if (this.plugin.settings.apiKey) {
+		if (this._lastConnectionResult) {
+			this._connectionStatusEl.createEl('div', {
+				text: this._lastConnectionResult.message,
+				cls: `lumen-status-${this._lastConnectionResult.type}`,
+			});
+		} else if (this.plugin.settings.apiKey) {
 			this._connectionStatusEl.createEl('div', {
 				text: 'Not connected \u2014 click Test Connection to verify',
 				cls: 'lumen-status-info',
@@ -268,6 +274,7 @@ export class LumenSettingTab extends PluginSettingTab {
 	}
 
 	private showConnectionStatus(type: 'success' | 'error' | 'info', message: string): void {
+		this._lastConnectionResult = { type, message };
 		if (!this._connectionStatusEl) return;
 		this._connectionStatusEl.empty();
 		this._connectionStatusEl.createEl('div', {

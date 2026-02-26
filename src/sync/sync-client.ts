@@ -211,7 +211,9 @@ export class SyncClient extends LumenHttpClient {
 	/**
 	 * Send the client file manifest with device ID and sync sequence.
 	 *
-	 * Uses native `fetch` for AbortSignal support during sync cancellation.
+	 * Uses Obsidian's `requestUrl` for reliable cross-platform connectivity
+	 * (native `fetch` fails in some Electron environments due to CORS).
+	 * Abort support via pre-flight signal check.
 	 */
 	async sendManifestV2(
 		files: FileManifestEntry[],
@@ -220,6 +222,8 @@ export class SyncClient extends LumenHttpClient {
 		cursor?: string,
 		signal?: AbortSignal,
 	): Promise<SyncManifestResponseV2> {
+		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
 		const url = this.buildUrl('sync/manifest');
 
 		logger.debug('Sending V2 manifest:', {
@@ -239,23 +243,22 @@ export class SyncClient extends LumenHttpClient {
 			body.cursor = cursor;
 		}
 
-		const response = await fetch(url, {
+		const response = await requestUrl({
+			url,
 			method: 'POST',
 			headers: this.headers,
 			body: JSON.stringify(body),
-			signal,
 		});
 
-		if (!response.ok) {
-			const errorText = await this.extractFetchErrorMessage(response);
+		if (response.status < 200 || response.status >= 300) {
 			const error = new Error(
-				`V2 manifest exchange failed: ${response.status} ${errorText}`,
+				`V2 manifest exchange failed: ${response.status} ${this.extractErrorMessage(response)}`,
 			);
 			(error as Error & { status: number }).status = response.status;
 			throw error;
 		}
 
-		const result = (await response.json()) as SyncManifestResponseV2;
+		const result = response.json as SyncManifestResponseV2;
 		logger.info('V2 manifest response:', {
 			sessionId: result.sync_session_id,
 			neededFiles: result.needed_files.length,
@@ -270,7 +273,9 @@ export class SyncClient extends LumenHttpClient {
 	/**
 	 * Download files from the server (pull path).
 	 *
-	 * Uses native `fetch` for AbortSignal support during sync cancellation.
+	 * Uses Obsidian's `requestUrl` for reliable cross-platform connectivity
+	 * (native `fetch` fails in some Electron environments due to CORS).
+	 * Abort support via pre-flight signal check.
 	 */
 	async downloadFiles(
 		sessionId: string,
@@ -278,32 +283,33 @@ export class SyncClient extends LumenHttpClient {
 		endpoint?: string,
 		signal?: AbortSignal,
 	): Promise<SyncDownloadResponse> {
+		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
 		const url = endpoint
 			? `${this.baseUrl}${endpoint}`
 			: this.buildUrl('sync/download');
 
 		logger.debug('Downloading files:', { sessionId, pathCount: paths.length, endpoint: endpoint ?? '(default)' });
 
-		const response = await fetch(url, {
+		const response = await requestUrl({
+			url,
 			method: 'POST',
 			headers: this.headers,
 			body: JSON.stringify({
 				sync_session_id: sessionId,
 				paths,
 			}),
-			signal,
 		});
 
-		if (!response.ok) {
-			const errorText = await this.extractFetchErrorMessage(response);
+		if (response.status < 200 || response.status >= 300) {
 			const error = new Error(
-				`Download failed: ${response.status} ${errorText}`,
+				`Download failed: ${response.status} ${this.extractErrorMessage(response)}`,
 			);
 			(error as Error & { status: number }).status = response.status;
 			throw error;
 		}
 
-		return (await response.json()) as SyncDownloadResponse;
+		return response.json as SyncDownloadResponse;
 	}
 
 	// -----------------------------------------------------------------------
