@@ -1,9 +1,9 @@
 /**
  * SyncClient -- HTTP client for the Lumen server sync endpoints.
  *
- * Uses native `fetch` for sync operations (supports AbortSignal for
- * cancellation). Uses Obsidian's `requestUrl` only for registration
- * and status (where cancellation isn't needed).
+ * Uses Obsidian's `requestUrl` for all endpoints — it runs in the
+ * main process and bypasses Electron CORS restrictions that cause
+ * native `fetch` to fail in some environments.
  *
  * Endpoints:
  *   POST /api/workspaces/:id/sync/register  -- Plugin registration
@@ -88,9 +88,9 @@ export class SyncClient extends LumenHttpClient {
 	/**
 	 * Upload file contents as multipart/form-data.
 	 *
-	 * Uses native `fetch` for AbortSignal support with a manually
-	 * constructed multipart body (FormData serialization is unreliable
-	 * across Electron versions).
+	 * Uses Obsidian's `requestUrl` with a manually constructed multipart
+	 * body for reliable cross-platform connectivity (native `fetch` fails
+	 * in some Electron environments due to CORS).
 	 *
 	 * @param sessionId -- sync_session_id returned from sendManifestV2()
 	 * @param files -- Map of vault-relative path -> file content
@@ -105,6 +105,8 @@ export class SyncClient extends LumenHttpClient {
 		isLastBatch: boolean = true,
 		signal?: AbortSignal,
 	): Promise<SyncUploadResponse> {
+		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
 		const url = this.buildUrl('sync/upload');
 
 		logger.debug('Uploading files:', { sessionId, fileCount: files.size });
@@ -154,24 +156,23 @@ export class SyncClient extends LumenHttpClient {
 			offset += part.length;
 		}
 
-		const response = await fetch(url, {
+		const response = await requestUrl({
+			url,
 			method: 'POST',
 			headers: {
 				'X-API-Key': this.apiKey,
 				'Content-Type': `multipart/form-data; boundary=${boundary}`,
 			},
 			body: body.buffer,
-			signal,
 		});
 
-		if (!response.ok) {
-			const errorText = await this.extractFetchErrorMessage(response);
+		if (response.status < 200 || response.status >= 300) {
 			throw new Error(
-				`Upload failed: ${response.status} ${errorText}`,
+				`Upload failed: ${response.status} ${this.extractErrorMessage(response)}`,
 			);
 		}
 
-		const result = (await response.json()) as SyncUploadResponse;
+		const result = response.json as SyncUploadResponse;
 		logger.info('Upload complete:', {
 			accepted: result.accepted,
 			rejected: result.rejected,
@@ -337,20 +338,4 @@ export class SyncClient extends LumenHttpClient {
 		}
 	}
 
-	/**
-	 * Extract error message from a native fetch Response.
-	 */
-	private async extractFetchErrorMessage(response: Response): Promise<string> {
-		try {
-			const body = (await response.json()) as Record<string, unknown>;
-			return (body.message as string) || (body.error as string) || '';
-		} catch {
-			try {
-				const text = await response.text();
-				return text.slice(0, 200);
-			} catch {
-				return '';
-			}
-		}
-	}
 }

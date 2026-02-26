@@ -7,6 +7,8 @@ export default defineConfig({
 		environment: 'node',
 		include: ['tests/**/*.{test,spec}.ts'],
 		exclude: ['node_modules', 'main.js'],
+		teardownTimeout: 3000,
+		forceExit: true,
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'json-summary'],
