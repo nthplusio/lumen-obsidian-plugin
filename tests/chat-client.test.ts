@@ -98,7 +98,7 @@ describe('ChatClient', () => {
 			expect(result.subscriptionStatus).toBe('active');
 			expect(mockRequestUrl).toHaveBeenCalledOnce();
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.dev/api/workspaces/ws-123',
+				url: 'https://app.getlumen.io/api/workspaces/ws-123',
 				method: 'GET',
 			}));
 		});
@@ -167,7 +167,7 @@ describe('ChatClient', () => {
 
 			expect(result.id).toBe('conv-abc');
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.dev/api/conversations',
+				url: 'https://app.getlumen.io/api/conversations',
 				method: 'POST',
 			}));
 		});
@@ -193,7 +193,7 @@ describe('ChatClient', () => {
 			await client.listConversations(10, 5);
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.dev/api/conversations?limit=10&offset=5',
+				url: 'https://app.getlumen.io/api/conversations?limit=10&offset=5',
 				method: 'GET',
 			}));
 		});
@@ -206,7 +206,7 @@ describe('ChatClient', () => {
 			await client.deleteConversation('conv-123');
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.dev/api/conversations/conv-123',
+				url: 'https://app.getlumen.io/api/conversations/conv-123',
 				method: 'DELETE',
 			}));
 		});
@@ -232,7 +232,7 @@ describe('ChatClient', () => {
 
 			expect(mockFetch).toHaveBeenCalledOnce();
 			const [url, options] = mockFetch.mock.calls[0]!;
-			expect(url).toBe('https://app.getlumen.dev/api/conversations/conv-1/messages');
+			expect(url).toBe('https://app.getlumen.io/api/conversations/conv-1/messages');
 			expect(options.method).toBe('POST');
 
 			const body = JSON.parse(options.body);

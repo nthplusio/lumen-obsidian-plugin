@@ -23,7 +23,7 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const API_URL = 'https://app.getlumen.dev';
+const API_URL = 'https://app.getlumen.io';
 const API_KEY = 'lumen_sk_test_key_abc123';
 const WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 

@@ -10,7 +10,7 @@
 // ============================================================================
 
 /** Production API URL — baked in, not user-configurable */
-export const LUMEN_API_URL = 'https://app.getlumen.dev';
+export const LUMEN_API_URL = 'https://app.getlumen.io';
 
 // ============================================================================
 // Plugin Settings (persisted locally to data.json)
