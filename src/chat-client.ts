@@ -5,14 +5,12 @@
  * and typed error handling (403/429).
  *
  * CRUD operations use Obsidian's `requestUrl` (CORS-safe in Electron).
- * Message streaming uses Node's `https` module (available in Electron) for
- * real-time token delivery — Obsidian's `requestUrl` doesn't support streaming
- * and native `fetch` is CORS-blocked in Electron's renderer.
+ * Message streaming uses native `fetch` with `ReadableStream` for real-time
+ * token delivery — the server includes CORS headers on the hijacked SSE
+ * response, so `fetch` works in Electron's renderer.
  */
 
 import { requestUrl } from 'obsidian';
-import * as https from 'https';
-import * as http from 'http';
 import type {
 	ChatSource,
 	ChatStreamResult,
@@ -145,14 +143,12 @@ export class ChatClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// Send Message (real-time SSE streaming via Node https)
+	// Send Message (real-time SSE streaming via fetch + ReadableStream)
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Send a message with real-time SSE streaming via Node's https module.
+	 * Send a message with real-time SSE streaming via fetch + ReadableStream.
 	 *
-	 * Uses Node's built-in https module (available in Electron) instead of
-	 * native fetch (CORS-blocked) or requestUrl (no streaming support).
 	 * Tokens arrive incrementally via the `onToken` callback.
 	 *
 	 * @param conversationId Conversation to send to
@@ -180,112 +176,70 @@ export class ChatClient extends LumenHttpClient {
 			deep_research: options.deepResearch ?? false,
 		});
 
-		const parsedUrl = new URL(url);
-		const transport = parsedUrl.protocol === 'https:' ? https : http;
-
-		return new Promise<ChatStreamResult>((resolve, reject) => {
-			const req = transport.request(
-				{
-					hostname: parsedUrl.hostname,
-					port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-					path: parsedUrl.pathname + parsedUrl.search,
-					method: 'POST',
-					headers: {
-						...this.headers,
-						'Content-Length': new TextEncoder().encode(payload).byteLength,
-					},
-				},
-				(res) => {
-					const status = res.statusCode ?? 0;
-					logger.info(`Chat response: ${status} in ${Date.now() - startMs}ms`);
-
-					// Collect error response body for non-2xx
-					if (status < 200 || status >= 300) {
-						let errorBody = '';
-						res.on('data', (chunk: string | Buffer) => { errorBody += String(chunk); });
-						res.on('end', () => {
-							try {
-								this.handleNodeError(status, errorBody);
-							} catch (err) {
-								reject(err);
-							}
-						});
-						return;
-					}
-
-					// Stream SSE events
-					let buffer = '';
-					const tokens: string[] = [];
-					let sources: ChatSource[] = [];
-					let metadata: StreamMetadata | null = null;
-					const errors: string[] = [];
-
-					res.setEncoding('utf8');
-					res.on('data', (chunk: string) => {
-						buffer += chunk;
-
-						const { events, remaining } = parseSSEChunk(buffer);
-						buffer = remaining;
-
-						for (const event of events) {
-							if (event.token !== undefined) {
-								tokens.push(event.token);
-								options.onToken?.(event.token);
-							}
-							if (event.sources) {
-								sources = event.sources;
-							}
-							if (event.metadata) {
-								metadata = event.metadata;
-							}
-							if (event.error) {
-								errors.push(event.error);
-							}
-						}
-					});
-
-					res.on('end', () => {
-						for (const errMsg of errors) {
-							logger.warn(`Chat SSE error: ${errMsg}`);
-						}
-						const content = tokens.join('');
-						logger.info(`Chat complete: ${content.length} chars, ${sources.length} sources, ${Date.now() - startMs}ms total`);
-						resolve({ content, sources, metadata });
-					});
-
-					res.on('error', (err) => {
-						logger.error(`Chat stream error: ${err.message}`);
-						reject(err);
-					});
-				},
-			);
-
-			req.on('error', (err) => {
-				logger.error(`Chat request error: ${err.message}`);
-				reject(err);
-			});
-
-			// AbortSignal support
-			if (options.signal) {
-				if (options.signal.aborted) {
-					req.destroy();
-					const abortErr = new Error('The operation was aborted');
-					abortErr.name = 'AbortError';
-					reject(abortErr);
-					return;
-				}
-				options.signal.addEventListener('abort', () => {
-					req.destroy();
-					logger.info('Chat request aborted by user');
-					const abortErr = new Error('The operation was aborted');
-					abortErr.name = 'AbortError';
-					reject(abortErr);
-				}, { once: true });
-			}
-
-			req.write(payload);
-			req.end();
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: this.headers,
+			body: payload,
+			signal: options.signal,
 		});
+
+		const status = response.status;
+		logger.info(`Chat response: ${status} in ${Date.now() - startMs}ms`);
+
+		if (!response.ok) {
+			const errorBody = await response.text();
+			this.handleHttpError(status, errorBody);
+		}
+
+		// Stream SSE events from ReadableStream
+		const reader = response.body?.getReader();
+		if (!reader) {
+			throw new Error('Response body is not readable');
+		}
+
+		const decoder = new TextDecoder('utf-8');
+		let buffer = '';
+		const tokens: string[] = [];
+		let sources: ChatSource[] = [];
+		let metadata: StreamMetadata | null = null;
+		const errors: string[] = [];
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+
+				const { events, remaining } = parseSSEChunk(buffer);
+				buffer = remaining;
+
+				for (const event of events) {
+					if (event.token !== undefined) {
+						tokens.push(event.token);
+						options.onToken?.(event.token);
+					}
+					if (event.sources) {
+						sources = event.sources;
+					}
+					if (event.metadata) {
+						metadata = event.metadata;
+					}
+					if (event.error) {
+						errors.push(event.error);
+					}
+				}
+			}
+		} finally {
+			reader.releaseLock();
+		}
+
+		for (const errMsg of errors) {
+			logger.warn(`Chat SSE error: ${errMsg}`);
+		}
+		const content = tokens.join('');
+		logger.info(`Chat complete: ${content.length} chars, ${sources.length} sources, ${Date.now() - startMs}ms total`);
+		return { content, sources, metadata };
 	}
 
 	// -----------------------------------------------------------------------
@@ -293,12 +247,12 @@ export class ChatClient extends LumenHttpClient {
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Handle HTTP error response from Node's http/https request.
+	 * Handle HTTP error response.
 	 *
 	 * Parses the response body as JSON to extract structured error info
 	 * for 403 (plan_upgrade_required) and 429 (rate_limit_exceeded).
 	 */
-	private handleNodeError(status: number, responseBody: string): never {
+	private handleHttpError(status: number, responseBody: string): never {
 		let body: Record<string, unknown> = {};
 		try {
 			body = JSON.parse(responseBody) as Record<string, unknown>;
