@@ -158,7 +158,7 @@ describe('ChatClient', () => {
 	// -----------------------------------------------------------------------
 
 	describe('createConversation', () => {
-		it('calls POST /api/workspaces/:id/conversations', async () => {
+		it('calls POST /api/conversations', async () => {
 			mockRequestUrl.mockResolvedValueOnce({
 				json: { id: 'conv-abc' },
 			});
@@ -167,7 +167,7 @@ describe('ChatClient', () => {
 
 			expect(result.id).toBe('conv-abc');
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.io/api/workspaces/ws-123/conversations',
+				url: 'https://app.getlumen.io/api/conversations',
 				method: 'POST',
 			}));
 		});
@@ -185,7 +185,7 @@ describe('ChatClient', () => {
 	});
 
 	describe('listConversations', () => {
-		it('calls GET /api/workspaces/:id/conversations with params', async () => {
+		it('calls GET /api/conversations with params', async () => {
 			mockRequestUrl.mockResolvedValueOnce({
 				json: { conversations: [], total: 0 },
 			});
@@ -193,20 +193,20 @@ describe('ChatClient', () => {
 			await client.listConversations(10, 5);
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.io/api/workspaces/ws-123/conversations?limit=10&offset=5',
+				url: 'https://app.getlumen.io/api/conversations?limit=10&offset=5',
 				method: 'GET',
 			}));
 		});
 	});
 
 	describe('deleteConversation', () => {
-		it('calls DELETE /api/workspaces/:id/conversations/:id', async () => {
+		it('calls DELETE /api/conversations/:id', async () => {
 			mockRequestUrl.mockResolvedValueOnce({});
 
 			await client.deleteConversation('conv-123');
 
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
-				url: 'https://app.getlumen.io/api/workspaces/ws-123/conversations/conv-123',
+				url: 'https://app.getlumen.io/api/conversations/conv-123',
 				method: 'DELETE',
 			}));
 		});
@@ -232,7 +232,7 @@ describe('ChatClient', () => {
 
 			expect(mockFetch).toHaveBeenCalledOnce();
 			const [url, options] = mockFetch.mock.calls[0]!;
-			expect(url).toBe('https://app.getlumen.io/api/workspaces/ws-123/conversations/conv-1/messages');
+			expect(url).toBe('https://app.getlumen.io/api/conversations/conv-1/messages');
 			expect(options.method).toBe('POST');
 
 			const body = JSON.parse(options.body);
