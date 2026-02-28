@@ -1,10 +1,10 @@
 {
 	"id": "lumen-search",
 	"name": "Lumen",
+	"version": "1.5.0",
 	"minAppVersion": "0.15.0",
 	"description": "Search your vault semantically and sync notes to a Lumen server for AI-powered retrieval.",
 	"author": "Lumen",
 	"authorUrl": "https://getlumen.io",
-	"isDesktopOnly": false,
-	"version": "1.4.0"
+	"isDesktopOnly": false
 }
