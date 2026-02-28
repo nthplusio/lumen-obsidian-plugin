@@ -561,6 +561,25 @@ export class SyncManager {
 			}));
 		}
 
+		// ---- Phase 3.75: Save conflict copies (keep-both) ----
+		const conflictCopyPaths = new Map<string, string>();
+		if (v2Conflicts.length > 0) {
+			this.setState('resolving-conflicts');
+			for (const c of v2Conflicts) {
+				const localContent = conflictLocalContents.get(c.path);
+				if (localContent === undefined) continue;
+
+				const conflictPath = await this.generateConflictPath(c.path);
+				try {
+					await this.writeToVault(conflictPath, localContent);
+					conflictCopyPaths.set(c.path, conflictPath);
+					logger.info(`Saved conflict copy: ${c.path} → ${conflictPath}`);
+				} catch (err) {
+					logger.error(`Failed to save conflict copy for ${c.path}:`, err);
+				}
+			}
+		}
+
 		// ---- Phase 4: Download server changes ----
 		let filesDownloaded = 0;
 		let filesDeletedLocally = 0;
@@ -575,12 +594,14 @@ export class SyncManager {
 
 		if (v2Conflicts.length > 0) {
 			for (const c of v2Conflicts) {
+				const copyPath = conflictCopyPaths.get(c.path);
 				conflicts.push({
 					path: c.path,
 					type: 'both-modified',
 					localHash: c.client_hash,
 					serverHash: c.server_hash,
-					resolution: 'server-kept',
+					resolution: copyPath ? 'both-kept' : 'server-kept',
+					conflictCopyPath: copyPath,
 				});
 			}
 
@@ -591,9 +612,11 @@ export class SyncManager {
 			);
 
 			if (conflicts.length > 0) {
-				new Notice(
-					`Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`,
-				);
+				const keptBoth = conflicts.filter(c => c.resolution === 'both-kept').length;
+				const msg = keptBoth > 0
+					? `Sync complete. ${conflicts.length} conflict(s) — local copies saved as .conflict.md files`
+					: `Sync complete. ${conflicts.length} conflict(s) logged to .lumen-conflicts.md`;
+				new Notice(msg);
 			}
 		}
 
@@ -626,6 +649,7 @@ export class SyncManager {
 			errors,
 			duration,
 			conflicts: conflicts.length > 0 ? conflicts : undefined,
+			conflictCopyPaths: conflictCopyPaths.size > 0 ? conflictCopyPaths : undefined,
 		};
 
 		// Show summary Notice for manual syncs
@@ -1155,6 +1179,24 @@ export class SyncManager {
 		}
 	}
 
+
+	/**
+	 * Generate a conflict copy path for a file.
+	 * `notes/my-note.md` → `notes/my-note.conflict.md`
+	 * If that already exists, appends a timestamp: `notes/my-note.conflict-1709049600.md`
+	 */
+	private async generateConflictPath(originalPath: string): Promise<string> {
+		const dotIdx = originalPath.lastIndexOf('.');
+		const base = dotIdx > 0 ? originalPath.slice(0, dotIdx) : originalPath;
+		const ext = dotIdx > 0 ? originalPath.slice(dotIdx) : '';
+
+		const candidatePath = `${base}.conflict${ext}`;
+		const existing = this.plugin.app.vault.getAbstractFileByPath(candidatePath);
+		if (!existing) return candidatePath;
+
+		const timestamp = Math.floor(Date.now() / 1000);
+		return `${base}.conflict-${timestamp}${ext}`;
+	}
 
 	private delay(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));

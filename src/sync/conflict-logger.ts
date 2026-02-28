@@ -18,7 +18,7 @@ const CONFLICT_LOG_PATH = '.lumen-conflicts.md';
 const LOG_HEADER = `# Lumen Sync Conflict Log
 
 This file logs conflicts detected during vault sync.
-Conflicts are resolved using last-write-wins (server version kept).
+When both versions differ, a local copy is saved as a \`.conflict.md\` file for review.
 
 ---
 
@@ -98,23 +98,30 @@ export class ConflictLogger {
 			lines.push(`   - Type: ${sanitizeConflictType(c.type)}`);
 			lines.push(`   - Local hash: \`${escapeMd(c.localHash)}\``);
 			lines.push(`   - Server hash: \`${escapeMd(c.serverHash)}\``);
-			lines.push(`   - Resolution: ${sanitizeResolution(c.resolution) === 'server-kept' ? 'Server version kept' : 'Local version kept'}`);
+			const res = sanitizeResolution(c.resolution);
+			const resolutionLabel = res === 'both-kept'
+				? `Both versions kept — local saved as \`${escapeMd(c.conflictCopyPath ?? 'unknown')}\``
+				: res === 'server-kept' ? 'Server version kept' : 'Local version kept';
+			lines.push(`   - Resolution: ${resolutionLabel}`);
 
-			const localContent = localContents?.get(c.path);
-			if (localContent) {
-				const rawSnippet = localContent.length > 2000
-					? localContent.slice(0, 2000) + '\n... (truncated)'
-					: localContent;
-				// Escape triple-backtick sequences to prevent breaking out of the code block
-				const snippet = rawSnippet.replace(/```/g, '` ` `');
-				lines.push('');
-				lines.push('   <details>');
-				lines.push('   <summary>Overwritten local content</summary>');
-				lines.push('');
-				lines.push('   ```markdown');
-				lines.push(`   ${snippet.split('\n').join('\n   ')}`);
-				lines.push('   ```');
-				lines.push('   </details>');
+			// Only include local content details when the content wasn't preserved as a copy
+			if (res !== 'both-kept') {
+				const localContent = localContents?.get(c.path);
+				if (localContent) {
+					const rawSnippet = localContent.length > 2000
+						? localContent.slice(0, 2000) + '\n... (truncated)'
+						: localContent;
+					// Escape triple-backtick sequences to prevent breaking out of the code block
+					const snippet = rawSnippet.replace(/```/g, '` ` `');
+					lines.push('');
+					lines.push('   <details>');
+					lines.push('   <summary>Overwritten local content</summary>');
+					lines.push('');
+					lines.push('   ```markdown');
+					lines.push(`   ${snippet.split('\n').join('\n   ')}`);
+					lines.push('   ```');
+					lines.push('   </details>');
+				}
 			}
 
 			lines.push('');

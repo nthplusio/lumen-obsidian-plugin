@@ -16,6 +16,7 @@ const STATE_ICONS: Record<SyncState, string> = {
 	manifest: 'loader-2',
 	uploading: 'loader-2',
 	downloading: 'loader-2',
+	'resolving-conflicts': 'loader-2',
 	success: 'check-circle',
 	error: 'alert-triangle',
 	offline: 'wifi-off',
@@ -29,6 +30,7 @@ const STATE_CLASSES: Record<SyncState, string> = {
 	manifest: 'lumen-sync-active',
 	uploading: 'lumen-sync-active',
 	downloading: 'lumen-sync-active',
+	'resolving-conflicts': 'lumen-sync-active',
 	success: 'lumen-sync-success',
 	error: 'lumen-sync-error',
 	offline: 'lumen-sync-offline',
@@ -165,7 +167,8 @@ export class SyncStatusBar {
 		return this.currentState === 'hashing'
 			|| this.currentState === 'manifest'
 			|| this.currentState === 'uploading'
-			|| this.currentState === 'downloading';
+			|| this.currentState === 'downloading'
+			|| this.currentState === 'resolving-conflicts';
 	}
 
 	private getStateText(
@@ -201,6 +204,8 @@ export class SyncStatusBar {
 				return 'Sync failed (click to retry)';
 			case 'offline':
 				return 'Offline';
+			case 'resolving-conflicts':
+				return 'Saving conflict copies...';
 			case 'cancelled':
 				return 'Sync cancelled';
 		}

@@ -75,7 +75,7 @@ describe('ConflictLogger', () => {
 
 			expect(path).toBe('.lumen-conflicts.md');
 			expect(content).toContain('# Lumen Sync Conflict Log');
-			expect(content).toContain('last-write-wins');
+			expect(content).toContain('.conflict.md');
 			expect(content).toContain('notes/file-1.md');
 		});
 
@@ -289,7 +289,7 @@ describe('ConflictLogger', () => {
 					/^\d+\.\s`/.test(trimmed) ||      // numbered list item
 					trimmed.includes('Lumen') ||      // header text
 					trimmed.includes('conflict') ||   // header text
-					trimmed.includes('last-write-wins'); // header text
+					trimmed.includes('.conflict.md'); // header text
 
 				expect(isStructural).toBe(true);
 			}

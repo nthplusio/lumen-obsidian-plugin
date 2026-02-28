@@ -23,7 +23,9 @@ import { FileHasher } from './sync/file-hasher';
 import { ConflictLogger } from './sync/conflict-logger';
 import { logger } from './utils/logger';
 import { networkStatus } from './utils/network-status';
-import { DEFAULT_SETTINGS, type ConflictEntry, type LumenSettings } from './types';
+import { ConflictResolutionModal } from './sync/conflict-resolution-modal';
+import type { ConflictResolution } from './sync/conflict-resolution-modal';
+import { DEFAULT_SETTINGS, type UnresolvedConflict, type LumenSettings } from './types';
 
 export default class LumenPlugin extends Plugin {
 	settings: LumenSettings = DEFAULT_SETTINGS;
@@ -31,13 +33,13 @@ export default class LumenPlugin extends Plugin {
 	chatClient: ChatClient | null = null;
 	api: LumenSearchAPI | null = null;
 
-	/** Recent sync conflicts for the UI — cleared when user dismisses */
-	recentConflicts: ConflictEntry[] = [];
-	private conflictListeners: Array<(conflicts: ConflictEntry[]) => void> = [];
+	/** Unresolved sync conflicts — each backed by a .conflict.md file in the vault */
+	unresolvedConflicts: UnresolvedConflict[] = [];
+	private conflictListeners: Array<(conflicts: UnresolvedConflict[]) => void> = [];
 	private settingsListeners: Array<() => void> = [];
 
 	/** Register a listener for conflict changes (returns unsubscribe fn) */
-	onConflictsChange(cb: (conflicts: ConflictEntry[]) => void): () => void {
+	onConflictsChange(cb: (conflicts: UnresolvedConflict[]) => void): () => void {
 		this.conflictListeners.push(cb);
 		return () => {
 			this.conflictListeners = this.conflictListeners.filter(l => l !== cb);
@@ -45,7 +47,7 @@ export default class LumenPlugin extends Plugin {
 	}
 
 	private notifyConflictListeners(): void {
-		for (const cb of this.conflictListeners) cb(this.recentConflicts);
+		for (const cb of this.conflictListeners) cb(this.unresolvedConflicts);
 	}
 
 	/** Register a listener for settings changes (returns unsubscribe fn) */
@@ -60,10 +62,63 @@ export default class LumenPlugin extends Plugin {
 		for (const cb of this.settingsListeners) cb();
 	}
 
-	/** Clear all recent conflicts (user dismissed) */
+	/** Clear all unresolved conflicts (user dismissed) */
 	dismissConflicts(): void {
-		this.recentConflicts = [];
+		this.unresolvedConflicts = [];
 		this.notifyConflictListeners();
+	}
+
+	/**
+	 * Resolve a single conflict by path.
+	 * Performs file operations and removes from the unresolved list.
+	 */
+	async resolveConflict(path: string, resolution: ConflictResolution): Promise<void> {
+		const conflict = this.unresolvedConflicts.find(c => c.path === path);
+		if (!conflict) return;
+
+		const vault = this.app.vault;
+
+		if (resolution === 'keep-local') {
+			// Replace main file with conflict copy content, then delete copy
+			const copyFile = vault.getAbstractFileByPath(conflict.conflictPath);
+			const mainFile = vault.getAbstractFileByPath(conflict.path);
+			if (copyFile instanceof TFile && mainFile instanceof TFile) {
+				const content = await vault.read(copyFile);
+				await vault.modify(mainFile, content);
+				await vault.delete(copyFile);
+			}
+		} else if (resolution === 'keep-server') {
+			// Server version already in place — just delete the conflict copy
+			const copyFile = vault.getAbstractFileByPath(conflict.conflictPath);
+			if (copyFile instanceof TFile) {
+				await vault.delete(copyFile);
+			}
+		}
+		// 'keep-both' and 'cancelled': leave both files as-is
+
+		this.unresolvedConflicts = this.unresolvedConflicts.filter(c => c.path !== path);
+		this.notifyConflictListeners();
+	}
+
+	/**
+	 * Resolve all unresolved conflicts with the same resolution.
+	 */
+	async resolveAllConflicts(resolution: ConflictResolution): Promise<void> {
+		const conflicts = [...this.unresolvedConflicts];
+		for (const conflict of conflicts) {
+			await this.resolveConflict(conflict.path, resolution);
+		}
+	}
+
+	/**
+	 * Open the conflict resolution modal for a specific conflict.
+	 */
+	async openConflictResolution(conflict: UnresolvedConflict): Promise<void> {
+		const modal = new ConflictResolutionModal(this.app, conflict);
+		const resolution = await modal.showAndWait();
+		if (resolution !== 'cancelled') {
+			await this.resolveConflict(conflict.path, resolution);
+		}
 	}
 
 	// Sync components — only initialized when apiKey + workspaceId are set
@@ -406,10 +461,25 @@ export default class LumenPlugin extends Plugin {
 				this.pluginTriggeredIndexing = true;
 				this.pollIndexingStatus();
 			}
-			// Surface conflicts to the UI
-			if (result.conflicts && result.conflicts.length > 0) {
-				this.recentConflicts = result.conflicts;
-				this.notifyConflictListeners();
+			// Surface conflicts to the UI as unresolved conflicts
+			if (result.conflicts && result.conflicts.length > 0 && result.conflictCopyPaths) {
+				const newConflicts: UnresolvedConflict[] = [];
+				for (const c of result.conflicts) {
+					const copyPath = result.conflictCopyPaths.get(c.path);
+					if (copyPath) {
+						newConflicts.push({
+							path: c.path,
+							conflictPath: copyPath,
+							localHash: c.localHash,
+							serverHash: c.serverHash,
+							detectedAt: new Date().toISOString(),
+						});
+					}
+				}
+				if (newConflicts.length > 0) {
+					this.unresolvedConflicts = [...this.unresolvedConflicts, ...newConflicts];
+					this.notifyConflictListeners();
+				}
 			}
 		});
 

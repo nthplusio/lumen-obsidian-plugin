@@ -1,29 +1,31 @@
 /**
- * useConflicts — Subscribes to sync conflict changes from the plugin.
+ * useConflicts — Subscribes to unresolved sync conflicts from the plugin.
  *
- * Returns the current conflict list and actions to dismiss or open
- * conflicted files.
+ * Returns the current conflict list and actions to resolve, dismiss,
+ * or open conflicted files.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ConflictEntry } from '../../types';
+import type { UnresolvedConflict } from '../../types';
+import type { ConflictResolution } from '../../sync/conflict-resolution-modal';
 import { usePlugin } from '../contexts/PluginContext';
 
 export interface UseConflictsReturn {
-	conflicts: ConflictEntry[];
+	conflicts: UnresolvedConflict[];
 	dismiss: () => void;
 	openFile: (path: string) => void;
 	openConflictLog: () => void;
+	resolve: (conflict: UnresolvedConflict) => void;
+	resolveAll: (resolution: ConflictResolution) => void;
 }
 
 export function useConflicts(): UseConflictsReturn {
 	const { plugin, app } = usePlugin();
-	const [conflicts, setConflicts] = useState<ConflictEntry[]>(plugin.recentConflicts);
+	const [conflicts, setConflicts] = useState<UnresolvedConflict[]>(plugin.unresolvedConflicts);
 
 	useEffect(() => {
 		const unsub = plugin.onConflictsChange(setConflicts);
-		// Sync initial state in case it changed between render and effect
-		setConflicts(plugin.recentConflicts);
+		setConflicts(plugin.unresolvedConflicts);
 		return unsub;
 	}, [plugin]);
 
@@ -40,5 +42,13 @@ export function useConflicts(): UseConflictsReturn {
 		app.workspace.openLinkText('.lumen-conflicts.md', '', false);
 	}, [app]);
 
-	return { conflicts, dismiss, openFile, openConflictLog };
+	const resolve = useCallback((conflict: UnresolvedConflict) => {
+		plugin.openConflictResolution(conflict);
+	}, [plugin]);
+
+	const resolveAll = useCallback((resolution: ConflictResolution) => {
+		plugin.resolveAllConflicts(resolution);
+	}, [plugin]);
+
+	return { conflicts, dismiss, openFile, openConflictLog, resolve, resolveAll };
 }

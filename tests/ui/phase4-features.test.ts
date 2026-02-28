@@ -209,8 +209,8 @@ describe('ConflictBanner component', () => {
 		const content = bannerSource();
 		expect(content).toContain('lumen-conflict-item-path');
 		expect(content).toContain('lumen-conflict-item-detail');
-		expect(content).toContain('Server version kept');
-		expect(content).toContain('Local version kept');
+		expect(content).toContain('Both modified');
+		expect(content).toContain('lumen-conflict-resolve-btn');
 	});
 
 	it('has link to full conflict log', () => {
@@ -233,8 +233,8 @@ describe('ConflictBanner component', () => {
 describe('Plugin conflict integration', () => {
 	const mainSource = () => readFileSync('src/main.ts', 'utf-8');
 
-	it('plugin has recentConflicts array', () => {
-		expect(mainSource()).toContain('recentConflicts: ConflictEntry[]');
+	it('plugin has unresolvedConflicts array', () => {
+		expect(mainSource()).toContain('unresolvedConflicts: UnresolvedConflict[]');
 	});
 
 	it('plugin has onConflictsChange subscriber', () => {

@@ -564,7 +564,7 @@ describe('Sync Flow Integration', () => {
 			expect(result.conflicts).toHaveLength(1);
 			expect(result.conflicts![0].path).toBe('notes/conflicted.md');
 			expect(result.conflicts![0].type).toBe('both-modified');
-			expect(result.conflicts![0].resolution).toBe('server-kept');
+			expect(result.conflicts![0].resolution).toBe('both-kept');
 		});
 	});
 

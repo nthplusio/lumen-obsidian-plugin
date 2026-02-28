@@ -457,7 +457,8 @@ describe('SyncManager V2 integration', () => {
 			expect(loggedConflicts[0]).toMatchObject({
 				path: 'notes/conflict.md',
 				type: 'both-modified',
-				resolution: 'server-kept',
+				resolution: 'both-kept',
+				conflictCopyPath: 'notes/conflict.conflict.md',
 			});
 		});
 	});

@@ -42,7 +42,7 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 // ============================================================================
 
 /** Sync engine states */
-export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'downloading' | 'success' | 'error' | 'offline' | 'cancelled';
+export type SyncState = 'idle' | 'hashing' | 'manifest' | 'uploading' | 'downloading' | 'resolving-conflicts' | 'success' | 'error' | 'offline' | 'cancelled';
 
 /** Result returned after a sync completes (or fails) */
 export interface SyncResult {
@@ -55,6 +55,7 @@ export interface SyncResult {
 	errors: string[];
 	duration: number;
 	conflicts?: ConflictEntry[];
+	conflictCopyPaths?: Map<string, string>;
 	batchCount?: number;
 }
 
@@ -64,7 +65,17 @@ export interface ConflictEntry {
 	type: 'server-modified' | 'local-modified' | 'both-modified';
 	localHash: string;
 	serverHash: string;
-	resolution: 'server-kept' | 'local-kept';
+	resolution: 'server-kept' | 'local-kept' | 'both-kept';
+	conflictCopyPath?: string;
+}
+
+/** An unresolved conflict tracked by the plugin for user resolution */
+export interface UnresolvedConflict {
+	path: string;
+	conflictPath: string;
+	localHash: string;
+	serverHash: string;
+	detectedAt: string;
 }
 
 /** Progress callback for sync status updates */

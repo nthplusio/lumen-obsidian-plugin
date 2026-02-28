@@ -3309,6 +3309,29 @@
 	padding: 0 12px 8px;
 }
 
+.lumen-conflict-bulk-actions {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+
+.lumen-conflict-bulk-btn {
+	flex: 1;
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	transition: background 100ms ease, color 100ms ease;
+}
+
+.lumen-conflict-bulk-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
 .lumen-conflict-item {
 	display: flex;
 	align-items: flex-start;
@@ -3369,6 +3392,149 @@
 	transition: background 100ms ease;
 }
 
+.lumen-conflict-resolve-btn {
+	flex-shrink: 0;
+	align-self: center;
+	padding: 2px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: transparent;
+	color: var(--text-accent);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	transition: background 100ms ease, border-color 100ms ease;
+}
+
+.lumen-conflict-resolve-btn:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--text-accent);
+}
+
 .lumen-conflict-log-link:hover {
 	background: var(--background-modifier-hover);
+}
+
+/* ============================================
+   Conflict Resolution Modal
+   ============================================ */
+
+.lumen-conflict-modal {
+	padding: 0;
+}
+
+.lumen-conflict-modal-header {
+	padding: 16px 20px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-conflict-modal-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.lumen-conflict-modal-title-row h2 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+}
+
+.lumen-conflict-modal-icon {
+	color: var(--text-warning);
+}
+
+.lumen-conflict-modal-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.lumen-conflict-modal-path {
+	margin: 4px 0 0;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.lumen-conflict-modal-panels {
+	display: flex;
+	gap: 1px;
+	background: var(--background-modifier-border);
+	min-height: 200px;
+	max-height: 60vh;
+}
+
+.lumen-conflict-modal-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--background-primary);
+}
+
+.lumen-conflict-modal-panel-local {
+	background: var(--background-primary);
+}
+
+.lumen-conflict-modal-panel-server {
+	background: var(--background-secondary);
+}
+
+.lumen-conflict-modal-panel-header {
+	padding: 8px 12px;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.lumen-conflict-modal-panel-content {
+	padding: 12px;
+	overflow: auto;
+	flex: 1;
+}
+
+.lumen-conflict-modal-panel-content pre {
+	margin: 0;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	word-break: break-word;
+	color: var(--text-normal);
+}
+
+.lumen-conflict-modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 12px 20px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.lumen-conflict-modal-btn {
+	padding: 6px 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: transparent;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	transition: background 100ms ease, border-color 100ms ease;
+}
+
+.lumen-conflict-modal-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.lumen-conflict-modal-btn-local {
+	color: var(--text-accent);
+}
+
+.lumen-conflict-modal-btn-local:hover {
+	border-color: var(--text-accent);
+}
+
+.lumen-conflict-modal-btn-server {
+	color: var(--text-normal);
+}
+
+.lumen-conflict-modal-btn-both {
+	color: var(--text-muted);
 }

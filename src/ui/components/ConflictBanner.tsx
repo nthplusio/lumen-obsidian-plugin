@@ -1,16 +1,17 @@
 /**
- * ConflictBanner — Shows a dismissible banner when sync conflicts exist.
+ * ConflictBanner — Shows a dismissible banner when unresolved sync conflicts exist.
  *
- * Displays at the top of the sidebar with conflict count, an expandable
- * list of affected files, and a link to the full conflict log.
+ * Displays at the top of the sidebar with conflict count, per-item Resolve
+ * buttons, bulk action buttons, and a link to the full conflict log.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setIcon } from 'obsidian';
 import { useConflicts } from '../hooks/useConflicts';
+import type { UnresolvedConflict } from '../../types';
 
 export function ConflictBanner() {
-	const { conflicts, dismiss, openFile, openConflictLog } = useConflicts();
+	const { conflicts, dismiss, openFile, openConflictLog, resolve, resolveAll } = useConflicts();
 	const [expanded, setExpanded] = useState(false);
 
 	if (conflicts.length === 0) return null;
@@ -25,13 +26,26 @@ export function ConflictBanner() {
 			/>
 			{expanded && (
 				<div className="lumen-conflict-list">
+					<div className="lumen-conflict-bulk-actions">
+						<button
+							className="lumen-conflict-bulk-btn"
+							onClick={() => resolveAll('keep-server')}
+						>
+							Keep All Server
+						</button>
+						<button
+							className="lumen-conflict-bulk-btn"
+							onClick={() => resolveAll('keep-local')}
+						>
+							Keep All Local
+						</button>
+					</div>
 					{conflicts.map((c, i) => (
 						<ConflictItem
 							key={`${c.path}-${i}`}
-							path={c.path}
-							type={c.type}
-							resolution={c.resolution}
+							conflict={c}
 							onOpen={() => openFile(c.path)}
+							onResolve={() => resolve(c)}
 						/>
 					))}
 					<button
@@ -90,36 +104,40 @@ function ConflictBannerHeader({ count, expanded, onToggle, onDismiss }: Conflict
 }
 
 interface ConflictItemProps {
-	path: string;
-	type: string;
-	resolution: string;
+	conflict: UnresolvedConflict;
 	onOpen: () => void;
+	onResolve: () => void;
 }
 
-function ConflictItem({ path, type, resolution, onOpen }: ConflictItemProps) {
+function ConflictItem({ conflict, onOpen, onResolve }: ConflictItemProps) {
 	const iconRef = useRef<HTMLSpanElement>(null);
 
 	useEffect(() => {
 		if (iconRef.current) setIcon(iconRef.current, 'file-text');
 	}, []);
 
-	const displayPath = path
+	const displayPath = conflict.path
 		.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\//i, '')
 		.replace(/^\/+/, '');
 
-	const typeLabel = type === 'both-modified' ? 'Both modified'
-		: type === 'server-modified' ? 'Server modified'
-		: 'Local modified';
-
-	const resolutionLabel = resolution === 'server-kept' ? 'Server version kept' : 'Local version kept';
+	const handleResolve = useCallback((e: React.MouseEvent) => {
+		e.stopPropagation();
+		onResolve();
+	}, [onResolve]);
 
 	return (
 		<div className="lumen-conflict-item" onClick={onOpen}>
 			<span className="lumen-conflict-item-icon" ref={iconRef} />
 			<div className="lumen-conflict-item-info">
 				<span className="lumen-conflict-item-path">{displayPath}</span>
-				<span className="lumen-conflict-item-detail">{typeLabel} — {resolutionLabel}</span>
+				<span className="lumen-conflict-item-detail">Both modified — local copy saved</span>
 			</div>
+			<button
+				className="lumen-conflict-resolve-btn"
+				onClick={handleResolve}
+			>
+				Resolve
+			</button>
 		</div>
 	);
 }

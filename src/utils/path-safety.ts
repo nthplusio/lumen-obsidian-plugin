@@ -33,7 +33,7 @@ export function escapeMd(s: string): string {
 }
 
 const VALID_CONFLICT_TYPES = new Set(['server-modified', 'local-modified', 'both-modified']);
-const VALID_RESOLUTIONS = new Set(['server-kept', 'local-kept']);
+const VALID_RESOLUTIONS = new Set(['server-kept', 'local-kept', 'both-kept']);
 
 /** Return the conflict type if valid, otherwise 'unknown'. */
 export function sanitizeConflictType(type: string): string {
