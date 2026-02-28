@@ -134,7 +134,7 @@ export interface PluginRegistrationResponse {
 	workspace_id: string;
 	sync_manifest_endpoint: string;
 	max_file_size_bytes: number;
-	allowed_extensions: string[];
+	denied_extensions: string[];
 	exclude_patterns: string[];
 }
 
@@ -151,6 +151,7 @@ export interface SyncStatusResponse {
 	};
 	exclude_patterns: string[];
 	max_file_size_bytes: number;
+	denied_extensions: string[];
 }
 
 // ============================================================================

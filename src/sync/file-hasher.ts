@@ -43,22 +43,22 @@ export class FileHasher {
 	excludePatterns: string[];
 	/** Server-provided max file size in bytes. Defaults to 50MB. */
 	maxFileSize: number;
-	/** Server-provided allowed extensions (without dots). Only these are hashed/uploaded. */
-	allowedExtensions: Set<string>;
+	/** Server-provided denied extensions (without dots). These are excluded from hashing/upload. */
+	deniedExtensions: Set<string>;
 
 	constructor(vault: Vault, settings: LumenSettings) {
 		this.vault = vault;
 		this.settings = settings;
 		this.excludePatterns = ['.obsidian/', '.trash/'];
 		this.maxFileSize = 50 * 1024 * 1024; // 50MB default
-		this.allowedExtensions = new Set(['md', 'pdf']); // server overrides via registration
+		this.deniedExtensions = new Set(); // nothing denied until server responds
 	}
 
 	/**
-	 * Hash all eligible .md files in the vault.
+	 * Hash all eligible files in the vault (denylist model).
 	 *
-	 * Skips files matching exclude patterns from settings.
-	 * Uses the mtime cache to avoid rehashing unchanged files.
+	 * All files are included except those with denied extensions,
+	 * matching exclude patterns, or exceeding the max file size.
 	 * Processes in chunks of {@link CHUNK_SIZE} with {@link CHUNK_DELAY_MS}
 	 * breaks between chunks.
 	 *
@@ -72,7 +72,7 @@ export class FileHasher {
 	): Promise<Map<string, FileManifestEntry>> {
 		const files = this.vault
 			.getFiles()
-			.filter((f) => !this.isExcluded(f.path) && this.isAllowedExtension(f.extension) && f.stat.size <= this.maxFileSize);
+			.filter((f) => !this.isExcluded(f.path) && !this.isDeniedExtension(f.extension) && f.stat.size <= this.maxFileSize);
 
 		// Warn on mobile for large vaults — hashing is CPU-intensive
 		if (Platform.isMobile && files.length > MOBILE_LARGE_VAULT_THRESHOLD) {
@@ -167,8 +167,8 @@ export class FileHasher {
 		return isExcludedByPatterns(path, this.excludePatterns);
 	}
 
-	private isAllowedExtension(ext: string): boolean {
-		return this.allowedExtensions.size === 0 || this.allowedExtensions.has(ext.toLowerCase());
+	private isDeniedExtension(ext: string): boolean {
+		return this.deniedExtensions.size > 0 && this.deniedExtensions.has(ext.toLowerCase());
 	}
 
 	/** Compute SHA-256 hash of a string using Web Crypto API. */

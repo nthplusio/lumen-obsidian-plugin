@@ -292,6 +292,78 @@ describe('FileHasher', () => {
 			expect(vault.read).toHaveBeenCalledTimes(75);
 		});
 
+		it('excludes files with denied extensions', async () => {
+			hasher.deniedExtensions = new Set(['exe', 'dll']);
+
+			const files = [
+				createMockFile('notes/readme.md', 1000, 50),
+				{ ...createMockFile('tools/app.exe', 2000, 50), extension: 'exe' },
+				{ ...createMockFile('libs/core.dll', 3000, 50), extension: 'dll' },
+				createMockFile('notes/todo.md', 4000, 50),
+			];
+			vault.getFiles.mockReturnValue(files);
+			vault.read.mockResolvedValue('content');
+
+			const result = await hasher.hashAllFiles();
+
+			expect(result.size).toBe(2);
+			expect(result.has('notes/readme.md')).toBe(true);
+			expect(result.has('notes/todo.md')).toBe(true);
+			expect(result.has('tools/app.exe')).toBe(false);
+			expect(result.has('libs/core.dll')).toBe(false);
+		});
+
+		it('allows all extensions when deniedExtensions is empty', async () => {
+			hasher.deniedExtensions = new Set();
+
+			const files = [
+				createMockFile('notes/readme.md', 1000, 50),
+				{ ...createMockFile('images/photo.png', 2000, 50), extension: 'png' },
+				{ ...createMockFile('data/export.csv', 3000, 50), extension: 'csv' },
+			];
+			vault.getFiles.mockReturnValue(files);
+			vault.read.mockResolvedValue('content');
+			vault.readBinary.mockResolvedValue(new ArrayBuffer(0));
+
+			const result = await hasher.hashAllFiles();
+
+			expect(result.size).toBe(3);
+		});
+
+		it('denied extension matching is case-insensitive', async () => {
+			hasher.deniedExtensions = new Set(['exe']);
+
+			const files = [
+				{ ...createMockFile('tools/app.EXE', 1000, 50), extension: 'EXE' },
+				{ ...createMockFile('tools/tool.Exe', 2000, 50), extension: 'Exe' },
+				createMockFile('notes/keep.md', 3000, 50),
+			];
+			vault.getFiles.mockReturnValue(files);
+			vault.read.mockResolvedValue('content');
+
+			const result = await hasher.hashAllFiles();
+
+			expect(result.size).toBe(1);
+			expect(result.has('notes/keep.md')).toBe(true);
+		});
+
+		it('files with no extension are allowed', async () => {
+			hasher.deniedExtensions = new Set(['exe', 'dll']);
+
+			const files = [
+				{ ...createMockFile('Makefile', 1000, 50), extension: '' },
+				createMockFile('notes/readme.md', 2000, 50),
+			];
+			vault.getFiles.mockReturnValue(files);
+			vault.read.mockResolvedValue('content');
+
+			const result = await hasher.hashAllFiles();
+
+			expect(result.size).toBe(2);
+			expect(result.has('Makefile')).toBe(true);
+			expect(result.has('notes/readme.md')).toBe(true);
+		});
+
 		it('handles file read errors gracefully (skips bad files)', async () => {
 			const files = [
 				createMockFile('notes/good.md', 1000),

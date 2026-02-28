@@ -388,10 +388,10 @@ export class SyncManager {
 				this.currentExcludePatterns = registration.exclude_patterns;
 				this.fileHasher.excludePatterns = registration.exclude_patterns;
 			}
-			// Cache allowed extensions so we only hash/upload files the server accepts
-			if (registration.allowed_extensions?.length) {
-				this.fileHasher.allowedExtensions = new Set(
-					registration.allowed_extensions.map((ext) => ext.replace(/^\./, '').toLowerCase()),
+			// Cache denied extensions so we skip files the server rejects
+			if (registration.denied_extensions?.length) {
+				this.fileHasher.deniedExtensions = new Set(
+					registration.denied_extensions.map((ext) => ext.replace(/^\./, '').toLowerCase()),
 				);
 			}
 
@@ -409,6 +409,11 @@ export class SyncManager {
 			if (syncConfig.max_file_size_bytes) {
 				this.fileHasher.maxFileSize = syncConfig.max_file_size_bytes;
 				this.currentMaxFileSize = syncConfig.max_file_size_bytes;
+			}
+			if (syncConfig.denied_extensions?.length) {
+				this.fileHasher.deniedExtensions = new Set(
+					syncConfig.denied_extensions.map((ext: string) => ext.replace(/^\./, '').toLowerCase()),
+				);
 			}
 		} catch {
 			// Server may not support config fields yet — use defaults

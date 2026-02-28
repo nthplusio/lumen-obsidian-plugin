@@ -86,7 +86,7 @@ const registrationResponse: PluginRegistrationResponse = {
 	workspace_id: WORKSPACE_ID,
 	sync_manifest_endpoint: `/api/workspaces/${WORKSPACE_ID}/sync/manifest`,
 	max_file_size_bytes: 50 * 1024 * 1024,
-	allowed_extensions: ['.md', '.pdf'],
+	denied_extensions: ['.exe', '.dll'],
 };
 
 const uploadResponse: SyncUploadResponse = {
@@ -110,6 +110,7 @@ const statusResponse: SyncStatusResponse = {
 	},
 	exclude_patterns: [],
 	max_file_size_bytes: 50 * 1024 * 1024,
+	denied_extensions: [],
 };
 
 const manifestResponseV2: SyncManifestResponseV2 = {
