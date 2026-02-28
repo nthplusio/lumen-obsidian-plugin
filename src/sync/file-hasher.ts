@@ -43,12 +43,15 @@ export class FileHasher {
 	excludePatterns: string[];
 	/** Server-provided max file size in bytes. Defaults to 50MB. */
 	maxFileSize: number;
+	/** Server-provided allowed extensions (without dots). Only these are hashed/uploaded. */
+	allowedExtensions: Set<string>;
 
 	constructor(vault: Vault, settings: LumenSettings) {
 		this.vault = vault;
 		this.settings = settings;
 		this.excludePatterns = ['.obsidian/', '.trash/'];
 		this.maxFileSize = 50 * 1024 * 1024; // 50MB default
+		this.allowedExtensions = new Set(['md', 'pdf']); // server overrides via registration
 	}
 
 	/**
@@ -69,7 +72,7 @@ export class FileHasher {
 	): Promise<Map<string, FileManifestEntry>> {
 		const files = this.vault
 			.getFiles()
-			.filter((f) => !this.isExcluded(f.path) && f.stat.size <= this.maxFileSize);
+			.filter((f) => !this.isExcluded(f.path) && this.isAllowedExtension(f.extension) && f.stat.size <= this.maxFileSize);
 
 		// Warn on mobile for large vaults — hashing is CPU-intensive
 		if (Platform.isMobile && files.length > MOBILE_LARGE_VAULT_THRESHOLD) {
@@ -162,6 +165,10 @@ export class FileHasher {
 
 	private isExcluded(path: string): boolean {
 		return isExcludedByPatterns(path, this.excludePatterns);
+	}
+
+	private isAllowedExtension(ext: string): boolean {
+		return this.allowedExtensions.size === 0 || this.allowedExtensions.has(ext.toLowerCase());
 	}
 
 	/** Compute SHA-256 hash of a string using Web Crypto API. */

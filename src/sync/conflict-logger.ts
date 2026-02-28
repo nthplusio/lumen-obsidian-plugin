@@ -53,7 +53,12 @@ export class ConflictLogger {
 			if (exists) {
 				await this.vault.adapter.append(CONFLICT_LOG_PATH, entry);
 			} else {
-				await this.vault.create(CONFLICT_LOG_PATH, LOG_HEADER + entry);
+				try {
+					await this.vault.create(CONFLICT_LOG_PATH, LOG_HEADER + entry);
+				} catch {
+					// Race: another call created the file between the check and create
+					await this.vault.adapter.append(CONFLICT_LOG_PATH, entry);
+				}
 			}
 
 			logger.info(`Logged ${conflicts.length} conflict(s) for session ${sessionId}`);

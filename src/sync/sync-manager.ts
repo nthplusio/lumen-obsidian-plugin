@@ -388,6 +388,12 @@ export class SyncManager {
 				this.currentExcludePatterns = registration.exclude_patterns;
 				this.fileHasher.excludePatterns = registration.exclude_patterns;
 			}
+			// Cache allowed extensions so we only hash/upload files the server accepts
+			if (registration.allowed_extensions?.length) {
+				this.fileHasher.allowedExtensions = new Set(
+					registration.allowed_extensions.map((ext) => ext.replace(/^\./, '').toLowerCase()),
+				);
+			}
 
 			this.settings.deviceId = deviceId;
 			logger.info('Plugin registered', { deviceId, workspaceId: registration.workspace_id });
