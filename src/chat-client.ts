@@ -98,13 +98,18 @@ export class ChatClient extends LumenHttpClient {
 	// Conversation CRUD
 	// -----------------------------------------------------------------------
 
+	/** Base URL for workspace-scoped conversation endpoints */
+	private get conversationsUrl(): string {
+		return `${this.baseUrl}/api/workspaces/${this.workspaceId}/conversations`;
+	}
+
 	/** Create a new conversation */
 	async createConversation(title?: string): Promise<{ id: string }> {
 		const body: Record<string, unknown> = {};
 		if (title) body['title'] = title;
 
 		const response = await requestUrl({
-			url: `${this.baseUrl}/api/conversations`,
+			url: this.conversationsUrl,
 			method: 'POST',
 			headers: this.headers,
 			body: JSON.stringify(body),
@@ -122,7 +127,7 @@ export class ChatClient extends LumenHttpClient {
 		params.set('offset', String(offset));
 
 		const response = await requestUrl({
-			url: `${this.baseUrl}/api/conversations?${params.toString()}`,
+			url: `${this.conversationsUrl}?${params.toString()}`,
 			method: 'GET',
 			headers: this.headers,
 		});
@@ -133,7 +138,7 @@ export class ChatClient extends LumenHttpClient {
 	/** Delete a conversation */
 	async deleteConversation(id: string): Promise<void> {
 		await requestUrl({
-			url: `${this.baseUrl}/api/conversations/${id}`,
+			url: `${this.conversationsUrl}/${id}`,
 			method: 'DELETE',
 			headers: this.headers,
 		});
@@ -166,7 +171,7 @@ export class ChatClient extends LumenHttpClient {
 			signal?: AbortSignal;
 		} = {},
 	): Promise<ChatStreamResult> {
-		const url = `${this.baseUrl}/api/conversations/${conversationId}/messages`;
+		const url = `${this.conversationsUrl}/${conversationId}/messages`;
 		logger.info(`Chat → POST ${url} (deep_research: ${options.deepResearch ?? false})`);
 
 		const startMs = Date.now();
