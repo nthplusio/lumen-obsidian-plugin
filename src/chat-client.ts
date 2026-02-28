@@ -192,7 +192,7 @@ export class ChatClient extends LumenHttpClient {
 					method: 'POST',
 					headers: {
 						...this.headers,
-						'Content-Length': Buffer.byteLength(payload),
+						'Content-Length': new TextEncoder().encode(payload).byteLength,
 					},
 				},
 				(res) => {
@@ -202,7 +202,7 @@ export class ChatClient extends LumenHttpClient {
 					// Collect error response body for non-2xx
 					if (status < 200 || status >= 300) {
 						let errorBody = '';
-						res.on('data', (chunk: Buffer) => { errorBody += chunk.toString(); });
+						res.on('data', (chunk: string | Buffer) => { errorBody += String(chunk); });
 						res.on('end', () => {
 							try {
 								this.handleNodeError(status, errorBody);
