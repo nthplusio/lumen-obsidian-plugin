@@ -5,12 +5,19 @@
  * and typed error handling (403/429).
  *
  * CRUD operations use Obsidian's `requestUrl` (CORS-safe in Electron).
- * Message streaming uses native `fetch` with `ReadableStream` for real-time
- * token delivery — the server includes CORS headers on the hijacked SSE
- * response, so `fetch` works in Electron's renderer.
+ * Message streaming uses Node's `https` module (available via Electron's
+ * Node integration on desktop) for real-time token delivery. Falls back
+ * to `requestUrl` (non-streaming) on mobile or if Node APIs are unavailable.
+ *
+ * Note: native `fetch` is CORS-blocked in Electron's renderer — even with
+ * server-side CORS headers, Electron blocks the request before it leaves
+ * the client. Only `requestUrl` (main process) and Node `https` (OS-level
+ * networking) bypass this restriction.
  */
 
 import { requestUrl } from 'obsidian';
+import * as https from 'https';
+import * as http from 'http';
 import type {
 	ChatSource,
 	ChatStreamResult,
@@ -22,10 +29,8 @@ import type {
 import { PlanUpgradeRequiredError, RateLimitExceededError } from './types';
 import { LumenHttpClient } from './http-client';
 import { parseSSEChunk } from './utils/sse-parser';
+import { parseConversationSSE } from './utils/sse-parser';
 import { logger } from './utils/logger';
-
-// Re-export error classes for backward compatibility
-export { PlanUpgradeRequiredError, RateLimitExceededError };
 
 /** Plan cache TTL: 5 minutes */
 const PLAN_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -143,13 +148,15 @@ export class ChatClient extends LumenHttpClient {
 	}
 
 	// -----------------------------------------------------------------------
-	// Send Message (real-time SSE streaming via fetch + ReadableStream)
+	// Send Message (SSE streaming)
 	// -----------------------------------------------------------------------
 
 	/**
-	 * Send a message with real-time SSE streaming via fetch + ReadableStream.
+	 * Send a message with real-time SSE streaming.
 	 *
-	 * Tokens arrive incrementally via the `onToken` callback.
+	 * On desktop: uses Node's `https` module for incremental token delivery.
+	 * On mobile/fallback: uses Obsidian's `requestUrl` (non-streaming — tokens
+	 * arrive all at once when the response completes).
 	 *
 	 * @param conversationId Conversation to send to
 	 * @param message User's message text
@@ -168,7 +175,33 @@ export class ChatClient extends LumenHttpClient {
 		} = {},
 	): Promise<ChatStreamResult> {
 		const url = `${this.baseUrl}/api/conversations/${conversationId}/messages`;
-		logger.info(`Chat → POST ${url} (deep_research: ${options.deepResearch ?? false})`);
+		const parsedUrl = new URL(url);
+		const transport = parsedUrl.protocol === 'https:' ? https.request : http.request;
+
+		if (transport) {
+			return this.sendMessageStreaming(url, parsedUrl, transport, message, options);
+		}
+
+		// Fallback: requestUrl (non-streaming)
+		logger.info(`Chat → POST ${url} (non-streaming fallback, deep_research: ${options.deepResearch ?? false})`);
+		return this.sendMessageFallback(url, message, options);
+	}
+
+	/**
+	 * Streaming path: Node's https/http module for incremental SSE delivery.
+	 */
+	private sendMessageStreaming(
+		url: string,
+		parsedUrl: URL,
+		transport: typeof https.request,
+		message: string,
+		options: {
+			deepResearch?: boolean;
+			onToken?: (token: string) => void;
+			signal?: AbortSignal;
+		},
+	): Promise<ChatStreamResult> {
+		logger.info(`Chat → POST ${url} (streaming, deep_research: ${options.deepResearch ?? false})`);
 
 		const startMs = Date.now();
 		const payload = JSON.stringify({
@@ -176,70 +209,176 @@ export class ChatClient extends LumenHttpClient {
 			deep_research: options.deepResearch ?? false,
 		});
 
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: this.headers,
-			body: payload,
-			signal: options.signal,
+		return new Promise<ChatStreamResult>((resolve, reject) => {
+			const req = transport(
+				{
+					hostname: parsedUrl.hostname,
+					port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+					path: parsedUrl.pathname + parsedUrl.search,
+					method: 'POST',
+					headers: {
+						...this.headers,
+						'Content-Length': new TextEncoder().encode(payload).byteLength,
+					},
+				},
+				(res) => {
+					const status = res.statusCode ?? 0;
+					logger.info(`Chat response: ${status} in ${Date.now() - startMs}ms`);
+
+					// Collect error response body for non-2xx
+					if (status < 200 || status >= 300) {
+						let errorBody = '';
+						res.on('data', (chunk: string) => { errorBody += String(chunk); });
+						res.on('end', () => {
+							try {
+								this.handleHttpError(status, errorBody);
+							} catch (err) {
+								reject(err);
+							}
+						});
+						return;
+					}
+
+					// Stream SSE events
+					let buffer = '';
+					const tokens: string[] = [];
+					let sources: ChatSource[] = [];
+					let metadata: StreamMetadata | null = null;
+					const errors: string[] = [];
+
+					res.setEncoding('utf8');
+					res.on('data', (chunk: string) => {
+						buffer += chunk;
+
+						const { events, remaining } = parseSSEChunk(buffer);
+						buffer = remaining;
+
+						for (const event of events) {
+							if (event.token !== undefined) {
+								tokens.push(event.token);
+								options.onToken?.(event.token);
+							}
+							if (event.sources) {
+								sources = event.sources;
+							}
+							if (event.metadata) {
+								metadata = event.metadata;
+							}
+							if (event.error) {
+								errors.push(event.error);
+							}
+						}
+					});
+
+					res.on('end', () => {
+						for (const errMsg of errors) {
+							logger.warn(`Chat SSE error: ${errMsg}`);
+						}
+						const content = tokens.join('');
+						logger.info(`Chat complete: ${content.length} chars, ${sources.length} sources, ${Date.now() - startMs}ms total`);
+						resolve({ content, sources, metadata });
+					});
+
+					res.on('error', (err) => {
+						logger.error(`Chat stream error: ${err.message}`);
+						reject(err);
+					});
+				},
+			);
+
+			req.on('error', (err) => {
+				logger.error(`Chat request error: ${err.message}`);
+				reject(err);
+			});
+
+			// AbortSignal support
+			if (options.signal) {
+				if (options.signal.aborted) {
+					req.destroy();
+					const abortErr = new Error('The operation was aborted');
+					abortErr.name = 'AbortError';
+					reject(abortErr);
+					return;
+				}
+				options.signal.addEventListener('abort', () => {
+					req.destroy();
+					logger.info('Chat request aborted by user');
+					const abortErr = new Error('The operation was aborted');
+					abortErr.name = 'AbortError';
+					reject(abortErr);
+				}, { once: true });
+			}
+
+			req.write(payload);
+			req.end();
 		});
+	}
 
-		const status = response.status;
-		logger.info(`Chat response: ${status} in ${Date.now() - startMs}ms`);
+	/**
+	 * Non-streaming fallback: requestUrl waits for the full SSE response,
+	 * then parses all events and emits tokens via onToken callback.
+	 */
+	private async sendMessageFallback(
+		url: string,
+		message: string,
+		options: {
+			deepResearch?: boolean;
+			onToken?: (token: string) => void;
+			signal?: AbortSignal;
+		},
+	): Promise<ChatStreamResult> {
+		const startMs = Date.now();
 
-		if (!response.ok) {
-			const errorBody = await response.text();
-			this.handleHttpError(status, errorBody);
+		if (options.signal?.aborted) {
+			const abortErr = new Error('The operation was aborted');
+			abortErr.name = 'AbortError';
+			throw abortErr;
 		}
-
-		// Stream SSE events from ReadableStream
-		const reader = response.body?.getReader();
-		if (!reader) {
-			throw new Error('Response body is not readable');
-		}
-
-		const decoder = new TextDecoder('utf-8');
-		let buffer = '';
-		const tokens: string[] = [];
-		let sources: ChatSource[] = [];
-		let metadata: StreamMetadata | null = null;
-		const errors: string[] = [];
 
 		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			const response = await requestUrl({
+				url,
+				method: 'POST',
+				headers: this.headers,
+				body: JSON.stringify({
+					message,
+					deep_research: options.deepResearch ?? false,
+				}),
+			});
 
-				buffer += decoder.decode(value, { stream: true });
+			const status = response.status;
+			logger.info(`Chat response: ${status} in ${Date.now() - startMs}ms`);
 
-				const { events, remaining } = parseSSEChunk(buffer);
-				buffer = remaining;
+			if (status < 200 || status >= 300) {
+				this.handleHttpError(status, response.text);
+			}
 
-				for (const event of events) {
-					if (event.token !== undefined) {
-						tokens.push(event.token);
-						options.onToken?.(event.token);
-					}
-					if (event.sources) {
-						sources = event.sources;
-					}
-					if (event.metadata) {
-						metadata = event.metadata;
-					}
-					if (event.error) {
-						errors.push(event.error);
-					}
+			// Parse the complete SSE response
+			const result = parseConversationSSE(response.text);
+
+			// Emit tokens via callback (all at once, since requestUrl is non-streaming)
+			if (options.onToken) {
+				for (const token of result.tokens) {
+					options.onToken(token);
 				}
 			}
-		} finally {
-			reader.releaseLock();
-		}
 
-		for (const errMsg of errors) {
-			logger.warn(`Chat SSE error: ${errMsg}`);
+			for (const errMsg of result.errors) {
+				logger.warn(`Chat SSE error: ${errMsg}`);
+			}
+
+			const content = result.tokens.join('');
+			logger.info(`Chat complete (fallback): ${content.length} chars, ${result.sources.length} sources, ${Date.now() - startMs}ms total`);
+			return { content, sources: result.sources, metadata: result.metadata };
+		} catch (err) {
+			// requestUrl throws on HTTP errors — extract status if available
+			if (err instanceof Error && 'status' in err) {
+				const status = (err as Error & { status: number }).status;
+				const text = 'text' in err ? String((err as Error & { text: string }).text) : err.message;
+				this.handleHttpError(status, text);
+			}
+			throw err;
 		}
-		const content = tokens.join('');
-		logger.info(`Chat complete: ${content.length} chars, ${sources.length} sources, ${Date.now() - startMs}ms total`);
-		return { content, sources, metadata };
 	}
 
 	// -----------------------------------------------------------------------

@@ -3,14 +3,16 @@
  *
  * Tests:
  *   - Plan caching: fresh fetch, cache hit, expiry, failure fallback
- *   - sendMessage with streaming via fetch + ReadableStream + onToken callback
+ *   - sendMessage with streaming via Node https + onToken callback
  *   - 403 → PlanUpgradeRequiredError
  *   - 429 → RateLimitExceededError
  *   - Conversation CRUD calls correct endpoints
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ChatClient, PlanUpgradeRequiredError, RateLimitExceededError } from '../src/chat-client';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'events';
+import { ChatClient } from '../src/chat-client';
+import { PlanUpgradeRequiredError, RateLimitExceededError } from '../src/types';
 
 // ---------------------------------------------------------------------------
 // Mock Obsidian's requestUrl (used for CRUD operations and plan fetching)
@@ -23,41 +25,61 @@ vi.mock('obsidian', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock fetch (used for SSE streaming in sendMessage)
+// Mock Node's https/http modules (used for SSE streaming in sendMessage)
 // ---------------------------------------------------------------------------
 
-const mockFetch = vi.fn();
-
-/**
- * Helper: create a mock Response with a ReadableStream body.
- * Encodes `sseText` as a single chunk delivered via the stream.
- */
-function mockFetchResponse(status: number, sseText: string): Response {
-	const encoder = new TextEncoder();
-	const body = new ReadableStream<Uint8Array>({
-		start(controller) {
-			if (sseText) {
-				controller.enqueue(encoder.encode(sseText));
-			}
-			controller.close();
-		},
-	});
-
-	return new Response(body, {
-		status,
-		statusText: status === 200 ? 'OK' : `Error ${status}`,
-	});
+class MockIncomingMessage extends EventEmitter {
+	statusCode: number;
+	constructor(statusCode: number) {
+		super();
+		this.statusCode = statusCode;
+	}
+	setEncoding(_encoding: string): void { /* noop */ }
 }
 
+class MockClientRequest extends EventEmitter {
+	destroyed = false;
+	write(_data: string): void { /* noop */ }
+	end(): void { /* noop */ }
+	destroy(): void { this.destroyed = true; }
+}
+
+const mockHttpsRequest = vi.fn();
+
+vi.mock('https', () => ({
+	request: (...args: unknown[]) => mockHttpsRequest(...args),
+}));
+
+vi.mock('http', () => ({
+	request: (...args: unknown[]) => mockHttpsRequest(...args),
+}));
+
 /**
- * Helper: create a mock error Response (non-2xx) with a plain text body.
- * For error responses, fetch reads the body as text, not as a stream.
+ * Helper: set up mockHttpsRequest to return a successful SSE response.
+ * Returns the mock response so tests can emit data/end events.
  */
-function mockErrorResponse(status: number, bodyText: string): Response {
-	return new Response(bodyText, {
-		status,
-		statusText: `Error ${status}`,
+function mockStreamResponse(statusCode: number, sseText: string): { req: MockClientRequest; res: MockIncomingMessage } {
+	const res = new MockIncomingMessage(statusCode);
+	const req = new MockClientRequest();
+
+	mockHttpsRequest.mockImplementationOnce((_opts: unknown, callback: (res: MockIncomingMessage) => void) => {
+		// Defer the callback so the req.write/req.end calls happen first
+		process.nextTick(() => {
+			callback(res);
+			if (statusCode >= 200 && statusCode < 300) {
+				// Emit SSE data in chunks, then end
+				if (sseText) res.emit('data', sseText);
+				res.emit('end');
+			} else {
+				// For error responses, emit the body then end
+				res.emit('data', sseText);
+				res.emit('end');
+			}
+		});
+		return req;
 	});
+
+	return { req, res };
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +91,7 @@ describe('ChatClient', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.stubGlobal('fetch', mockFetch);
 		client = new ChatClient('test-key', 'ws-123');
-	});
-
-	afterEach(() => {
-		vi.unstubAllGlobals();
 	});
 
 	// -----------------------------------------------------------------------
@@ -208,30 +225,29 @@ describe('ChatClient', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// sendMessage (SSE streaming via fetch + ReadableStream)
+	// sendMessage (SSE streaming via Node https)
 	// -----------------------------------------------------------------------
 
 	describe('sendMessage', () => {
 		it('sends POST with message and deep_research flag', async () => {
-			mockFetch.mockResolvedValueOnce(mockFetchResponse(200, [
+			mockStreamResponse(200, [
 				'event: content_block_delta',
 				'data: {"delta":{"type":"text_delta","text":"Hello"}}',
 				'',
 				'',
-			].join('\n')));
+			].join('\n'));
 
 			await client.sendMessage('conv-1', 'Test message', { deepResearch: true });
 
-			expect(mockFetch).toHaveBeenCalledOnce();
-			const [fetchUrl, fetchOpts] = mockFetch.mock.calls[0]!;
-			expect(fetchUrl).toBe('https://app.getlumen.io/api/conversations/conv-1/messages');
-			expect(fetchOpts.method).toBe('POST');
-			const body = JSON.parse(fetchOpts.body);
-			expect(body.deep_research).toBe(true);
+			expect(mockHttpsRequest).toHaveBeenCalledOnce();
+			const [opts] = mockHttpsRequest.mock.calls[0]!;
+			expect(opts.method).toBe('POST');
+			expect(opts.hostname).toBe('app.getlumen.io');
+			expect(opts.path).toBe('/api/conversations/conv-1/messages');
 		});
 
 		it('streams tokens via onToken callback', async () => {
-			mockFetch.mockResolvedValueOnce(mockFetchResponse(200, [
+			mockStreamResponse(200, [
 				'event: content_block_delta',
 				'data: {"delta":{"type":"text_delta","text":"Hello"}}',
 				'',
@@ -239,7 +255,7 @@ describe('ChatClient', () => {
 				'data: {"delta":{"type":"text_delta","text":" world"}}',
 				'',
 				'',
-			].join('\n')));
+			].join('\n'));
 
 			const tokens: string[] = [];
 			const result = await client.sendMessage('conv-1', 'Test', {
@@ -251,7 +267,7 @@ describe('ChatClient', () => {
 		});
 
 		it('returns sources and metadata from lumen_metadata event', async () => {
-			mockFetch.mockResolvedValueOnce(mockFetchResponse(200, [
+			mockStreamResponse(200, [
 				'event: content_block_delta',
 				'data: {"delta":{"type":"text_delta","text":"Answer"}}',
 				'',
@@ -259,7 +275,7 @@ describe('ChatClient', () => {
 				'data: {"sources":[{"path":"note.md","score":0.9}],"token_usage":{"input":10,"output":20},"turns_used":1,"turns_remaining":9}',
 				'',
 				'',
-			].join('\n')));
+			].join('\n'));
 
 			const result = await client.sendMessage('conv-1', 'Q');
 
@@ -269,7 +285,7 @@ describe('ChatClient', () => {
 		});
 
 		it('returns empty content when no tokens in response', async () => {
-			mockFetch.mockResolvedValueOnce(mockFetchResponse(200, ''));
+			mockStreamResponse(200, '');
 
 			const result = await client.sendMessage('conv-1', 'Q');
 
@@ -284,37 +300,37 @@ describe('ChatClient', () => {
 
 	describe('error handling', () => {
 		it('throws PlanUpgradeRequiredError on 403 with plan_upgrade_required', async () => {
-			mockFetch.mockResolvedValueOnce(mockErrorResponse(403, JSON.stringify({
+			mockStreamResponse(403, JSON.stringify({
 				error: 'plan_upgrade_required',
 				message: 'Deep Research requires a Plus plan',
 				required_plan: 'plus',
-			})));
+			}));
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow(PlanUpgradeRequiredError);
 		});
 
 		it('throws RateLimitExceededError on 429 with rate_limit_exceeded', async () => {
-			mockFetch.mockResolvedValueOnce(mockErrorResponse(429, JSON.stringify({
+			mockStreamResponse(429, JSON.stringify({
 				error: 'rate_limit_exceeded',
 				message: 'Daily limit reached',
 				limit: 50,
 				remaining: 0,
 				resets_at: '2026-02-20T00:00:00Z',
-			})));
+			}));
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow(RateLimitExceededError);
 		});
 
 		it('includes rate limit details in RateLimitExceededError', async () => {
-			mockFetch.mockResolvedValueOnce(mockErrorResponse(429, JSON.stringify({
+			mockStreamResponse(429, JSON.stringify({
 				error: 'rate_limit_exceeded',
 				message: 'Daily limit reached',
 				limit: 50,
 				remaining: 0,
 				resets_at: '2026-02-20T00:00:00Z',
-			})));
+			}));
 
 			try {
 				await client.sendMessage('conv-1', 'Q');
@@ -328,17 +344,23 @@ describe('ChatClient', () => {
 		});
 
 		it('throws generic Error on 403 without plan_upgrade_required', async () => {
-			mockFetch.mockResolvedValueOnce(mockErrorResponse(403, JSON.stringify({ message: 'Access denied' })));
+			mockStreamResponse(403, JSON.stringify({ message: 'Access denied' }));
 
 			await expect(client.sendMessage('conv-1', 'Q'))
 				.rejects.toThrow('Access denied');
 		});
 
 		it('re-throws original error for network failures', async () => {
-			mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+			const req = new MockClientRequest();
+			mockHttpsRequest.mockImplementationOnce(() => {
+				process.nextTick(() => {
+					req.emit('error', new Error('ECONNREFUSED'));
+				});
+				return req;
+			});
 
 			await expect(client.sendMessage('conv-1', 'Q'))
-				.rejects.toThrow('Failed to fetch');
+				.rejects.toThrow('ECONNREFUSED');
 		});
 	});
 });
