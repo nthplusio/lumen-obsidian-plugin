@@ -11,8 +11,8 @@
  */
 
 import { requestUrl } from 'obsidian';
-import https from 'https';
-import http from 'http';
+import * as https from 'https';
+import * as http from 'http';
 import type {
 	ChatSource,
 	ChatStreamResult,

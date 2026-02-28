@@ -46,12 +46,10 @@ class MockClientRequest extends EventEmitter {
 const mockHttpsRequest = vi.fn();
 
 vi.mock('https', () => ({
-	default: { request: (...args: unknown[]) => mockHttpsRequest(...args) },
 	request: (...args: unknown[]) => mockHttpsRequest(...args),
 }));
 
 vi.mock('http', () => ({
-	default: { request: (...args: unknown[]) => mockHttpsRequest(...args) },
 	request: (...args: unknown[]) => mockHttpsRequest(...args),
 }));
 
