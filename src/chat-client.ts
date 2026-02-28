@@ -5,19 +5,20 @@
  * and typed error handling (403/429).
  *
  * CRUD operations use Obsidian's `requestUrl` (CORS-safe in Electron).
- * Message streaming uses Node's `https` module (available via Electron's
- * Node integration on desktop) for real-time token delivery. Falls back
+ * Message streaming uses Node's `https` module (accessed via Electron's
+ * global `require` on desktop) for real-time token delivery. Falls back
  * to `requestUrl` (non-streaming) on mobile or if Node APIs are unavailable.
  *
- * Note: native `fetch` is CORS-blocked in Electron's renderer — even with
- * server-side CORS headers, Electron blocks the request before it leaves
- * the client. Only `requestUrl` (main process) and Node `https` (OS-level
- * networking) bypass this restriction.
+ * Note: Obsidian's plugin sandbox injects a custom `require` that only
+ * resolves known modules (obsidian, electron, codemirror). Static imports
+ * of Node built-ins like `https` resolve to empty modules at runtime.
+ * We use `globalThis.require` to access Electron's real Node.js require.
+ * Native `fetch` is CORS-blocked in Electron — only `requestUrl` (main
+ * process) and Node `https` bypass this restriction.
  */
 
 import { requestUrl } from 'obsidian';
-import * as https from 'https';
-import * as http from 'http';
+import type * as https from 'https';
 import type {
 	ChatSource,
 	ChatStreamResult,
@@ -28,8 +29,7 @@ import type {
 } from './types';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from './types';
 import { LumenHttpClient } from './http-client';
-import { parseSSEChunk } from './utils/sse-parser';
-import { parseConversationSSE } from './utils/sse-parser';
+import { parseSSEChunk, parseConversationSSE } from './utils/sse-parser';
 import { logger } from './utils/logger';
 
 /** Plan cache TTL: 5 minutes */
@@ -176,7 +176,7 @@ export class ChatClient extends LumenHttpClient {
 	): Promise<ChatStreamResult> {
 		const url = `${this.baseUrl}/api/conversations/${conversationId}/messages`;
 		const parsedUrl = new URL(url);
-		const transport = parsedUrl.protocol === 'https:' ? https.request : http.request;
+		const transport = this.resolveNodeTransport(parsedUrl.protocol);
 
 		if (transport) {
 			return this.sendMessageStreaming(url, parsedUrl, transport, message, options);
@@ -185,6 +185,32 @@ export class ChatClient extends LumenHttpClient {
 		// Fallback: requestUrl (non-streaming)
 		logger.info(`Chat → POST ${url} (non-streaming fallback, deep_research: ${options.deepResearch ?? false})`);
 		return this.sendMessageFallback(url, message, options);
+	}
+
+	/**
+	 * Resolve Node's http/https.request function at runtime.
+	 *
+	 * Obsidian's plugin loader injects a custom `require` that only resolves
+	 * known modules. `globalThis.require` accesses Electron's real Node.js
+	 * require, which correctly resolves built-in modules like `https`.
+	 * Returns null on mobile or when Node APIs are unavailable.
+	 */
+	private resolveNodeTransport(protocol: string): typeof https.request | null {
+		const moduleName = protocol === 'https:' ? 'https' : 'http';
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const nodeRequire = (globalThis as any).require;
+			if (typeof nodeRequire !== 'function') return null;
+			const mod = nodeRequire(moduleName) as typeof import('https');
+			if (typeof mod?.request === 'function') {
+				logger.debug(`Node ${moduleName}.request resolved via globalThis.require`);
+				return mod.request;
+			}
+		} catch {
+			// Node modules not available (mobile environment)
+		}
+		logger.debug(`Node ${moduleName}.request not available`);
+		return null;
 	}
 
 	/**

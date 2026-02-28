@@ -435,10 +435,10 @@ describe('SyncStatusBar', () => {
 			expect(onRetry).toHaveBeenCalledOnce();
 		});
 
-		it('does NOT call onRetry in idle state', () => {
+		it('triggers sync on click in idle state', () => {
 			bar.update('idle');
 			getContainer(statusBarEl)._trigger('click');
-			expect(onRetry).not.toHaveBeenCalled();
+			expect(onRetry).toHaveBeenCalledOnce();
 		});
 
 		it('does NOT call onRetry in hashing state', () => {

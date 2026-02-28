@@ -155,7 +155,7 @@ export class SyncStatusBar {
 	// -----------------------------------------------------------------------
 
 	private handleClick = (): void => {
-		if (this.currentState === 'error') {
+		if (this.currentState === 'error' || this.currentState === 'idle') {
 			this.onRetry();
 		} else if (this.isSyncing() && this.onCancel) {
 			this.onCancel();

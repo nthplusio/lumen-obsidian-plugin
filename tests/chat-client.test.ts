@@ -9,7 +9,7 @@
  *   - Conversation CRUD calls correct endpoints
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { ChatClient } from '../src/chat-client';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from '../src/types';
@@ -25,7 +25,11 @@ vi.mock('obsidian', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock Node's https/http modules (used for SSE streaming in sendMessage)
+// Mock Node's https/http via globalThis.require
+//
+// In Obsidian's Electron, `globalThis.require` provides access to Node's
+// real require function (bypassing Obsidian's sandboxed plugin require).
+// We mock it here to control what the ChatClient receives.
 // ---------------------------------------------------------------------------
 
 class MockIncomingMessage extends EventEmitter {
@@ -46,13 +50,8 @@ class MockClientRequest extends EventEmitter {
 
 const mockHttpsRequest = vi.fn();
 
-vi.mock('https', () => ({
-	request: (...args: unknown[]) => mockHttpsRequest(...args),
-}));
-
-vi.mock('http', () => ({
-	request: (...args: unknown[]) => mockHttpsRequest(...args),
-}));
+// Save original require to restore after tests
+const originalRequire = globalThis.require;
 
 /**
  * Helper: set up mockHttpsRequest to return a successful SSE response.
@@ -91,7 +90,22 @@ describe('ChatClient', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+
+		// Mock globalThis.require to return our mock https/http modules
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(globalThis as any).require = vi.fn((name: string) => {
+			if (name === 'https' || name === 'http') {
+				return { request: mockHttpsRequest };
+			}
+			return originalRequire(name);
+		});
+
 		client = new ChatClient('test-key', 'ws-123');
+	});
+
+	afterEach(() => {
+		// Restore original require
+		(globalThis as any).require = originalRequire;
 	});
 
 	// -----------------------------------------------------------------------
@@ -291,6 +305,31 @@ describe('ChatClient', () => {
 
 			expect(result.content).toBe('');
 			expect(result.sources).toEqual([]);
+		});
+
+		it('falls back to requestUrl when globalThis.require is unavailable', async () => {
+			// Remove globalThis.require to simulate mobile environment
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(globalThis as any).require = undefined;
+
+			mockRequestUrl.mockResolvedValueOnce({
+				status: 200,
+				text: [
+					'event: content_block_delta',
+					'data: {"delta":{"type":"text_delta","text":"Fallback"}}',
+					'',
+					'',
+				].join('\n'),
+			});
+
+			const tokens: string[] = [];
+			const result = await client.sendMessage('conv-1', 'Q', {
+				onToken: (t) => tokens.push(t),
+			});
+
+			expect(result.content).toBe('Fallback');
+			expect(tokens).toEqual(['Fallback']);
+			expect(mockHttpsRequest).not.toHaveBeenCalled();
 		});
 	});
 

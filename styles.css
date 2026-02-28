@@ -1627,6 +1627,11 @@
 /* State-specific styling */
 .lumen-sync-idle {
 	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.lumen-sync-idle:hover {
+	color: var(--text-normal);
 }
 
 .lumen-sync-active {
