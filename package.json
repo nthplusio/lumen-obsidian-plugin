@@ -1,6 +1,6 @@
 {
 	"name": "@lumen/obsidian-plugin",
-	"version": "1.6.3",
+	"version": "1.7.0",
 	"description": "Your vault, illuminated — semantic search powered by Lumen",
 	"type": "module",
 	"main": "main.js",
