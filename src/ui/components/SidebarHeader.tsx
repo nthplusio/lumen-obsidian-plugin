@@ -3,6 +3,9 @@
  *
  * Renders the full-color Lumen icon + title on the left,
  * and a help button on the right that opens LumenHelpModal.
+ *
+ * In compact mode (mobile), hides the title text and accepts
+ * children (e.g. inline TabBar) between the brand icon and help button.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -11,7 +14,12 @@ import { LUMEN_BRAND_SVG } from '../../icons';
 import { LumenHelpModal } from '../../help-modal';
 import { usePlugin } from '../contexts/PluginContext';
 
-export function SidebarHeader() {
+interface SidebarHeaderProps {
+	compact?: boolean;
+	children?: React.ReactNode;
+}
+
+export function SidebarHeader({ compact, children }: SidebarHeaderProps) {
 	const { app } = usePlugin();
 	const iconRef = useRef<HTMLSpanElement>(null);
 	const helpRef = useRef<HTMLButtonElement>(null);
@@ -33,12 +41,17 @@ export function SidebarHeader() {
 		new LumenHelpModal(app).open();
 	}, [app]);
 
+	const className = compact
+		? 'lumen-sidebar-header lumen-sidebar-header-compact'
+		: 'lumen-sidebar-header';
+
 	return (
-		<div className="lumen-sidebar-header">
+		<div className={className}>
 			<div className="lumen-sidebar-header-brand">
 				<span ref={iconRef} className="lumen-sidebar-header-icon" />
-				<span className="lumen-sidebar-header-title">Lumen</span>
+				{!compact && <span className="lumen-sidebar-header-title">Lumen</span>}
 			</div>
+			{children}
 			<button
 				ref={helpRef}
 				className="lumen-sidebar-header-help"

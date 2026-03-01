@@ -6,6 +6,20 @@
 import { createContext, useContext } from 'react';
 import type { App, Component, ItemView } from 'obsidian';
 import type LumenPlugin from '../../main';
+import type { SyncState } from '../../types';
+
+export interface SyncProgress {
+	current: number;
+	total: number;
+	message?: string;
+}
+
+export interface IndexingProgress {
+	indexed: number;
+	total: number;
+	percent: number;
+	serverTriggered?: boolean;
+}
 
 export interface PluginContextValue {
 	plugin: LumenPlugin;
@@ -13,6 +27,14 @@ export interface PluginContextValue {
 	view: ItemView;
 	/** Obsidian Component instance for MarkdownRenderer.render() */
 	component: Component;
+	/** Whether running on Obsidian mobile */
+	isMobile: boolean;
+	/** Current sync state (undefined if sync not initialized) */
+	syncState?: SyncState;
+	/** Current sync progress (only set during active sync phases) */
+	syncProgress?: SyncProgress;
+	/** Current indexing progress (only set when indexing is active) */
+	indexingProgress?: IndexingProgress;
 }
 
 const PluginContext = createContext<PluginContextValue | null>(null);

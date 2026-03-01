@@ -4,6 +4,10 @@
  * Shows OnboardingView when no API key is configured.
  * Otherwise renders TabBar + the active view (SearchView or ChatView).
  *
+ * On mobile, merges the sidebar header and tab bar into a single
+ * compact row and shows the sync status strip (since the Obsidian
+ * status bar is hidden on mobile).
+ *
  * Exposes an imperative API via ref for command-driven actions
  * (focus search, switch tabs, new chat).
  */
@@ -18,6 +22,7 @@ import { RelatedNotesView } from './components/related/RelatedNotesView';
 import { OnboardingView } from './components/onboarding/OnboardingView';
 import { ConflictBanner } from './components/ConflictBanner';
 import { SidebarHeader } from './components/SidebarHeader';
+import { SyncStatusStrip } from './components/SyncStatusStrip';
 
 /** Imperative API exposed via ref for keyboard shortcuts and commands. */
 export interface LumenAppHandle {
@@ -58,6 +63,9 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 			setActiveMode(mode);
 		}, []);
 
+		const { isMobile } = context;
+		const showSyncStrip = !!context.plugin.syncManager;
+
 		if (!configured) {
 			return (
 				<PluginProvider value={context}>
@@ -69,9 +77,20 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 
 		return (
 			<PluginProvider value={context}>
-				<SidebarHeader />
+				{isMobile ? (
+					/* Mobile: merged header + icon-only tabs in one row */
+					<SidebarHeader compact>
+						<TabBar compact activeMode={activeMode} onModeChange={handleModeChange} />
+					</SidebarHeader>
+				) : (
+					/* Desktop: separate header and tab bar rows */
+					<>
+						<SidebarHeader />
+						<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
+					</>
+				)}
+				{showSyncStrip && <SyncStatusStrip />}
 				<ConflictBanner />
-				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
 				{activeMode === 'search' && <SearchView />}
 				{activeMode === 'chat' && <ChatView />}
 				{activeMode === 'related' && <RelatedNotesView />}

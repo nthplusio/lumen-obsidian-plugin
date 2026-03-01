@@ -8,7 +8,7 @@
  * (focus search, switch tabs, new chat).
  */
 
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Platform, WorkspaceLeaf } from 'obsidian';
 import { createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type LumenPlugin from './main';
@@ -19,6 +19,7 @@ export const VIEW_TYPE_LUMEN_MAIN = 'lumen-main-view';
 export class LumenMainView extends ItemView {
 	private plugin: LumenPlugin;
 	private reactRoot: Root | null = null;
+	private unsubSyncState: (() => void) | null = null;
 	appRef = createRef<LumenAppHandle>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: LumenPlugin) {
@@ -45,20 +46,34 @@ export class LumenMainView extends ItemView {
 		container.addClass('lumen-main-container');
 
 		this.reactRoot = createRoot(container);
-		this.reactRoot.render(
-			<LumenApp
-				ref={this.appRef}
-				context={{
-					plugin: this.plugin,
-					app: this.app,
-					view: this,
-					component: this,
-				}}
-			/>,
-		);
+
+		const render = () => {
+			this.reactRoot?.render(
+				<LumenApp
+					ref={this.appRef}
+					context={{
+						plugin: this.plugin,
+						app: this.app,
+						view: this,
+						component: this,
+						isMobile: Platform.isMobile,
+						syncState: this.plugin.currentSyncState,
+						syncProgress: this.plugin.currentSyncProgress,
+						indexingProgress: this.plugin.currentIndexingProgress,
+					}}
+				/>,
+			);
+		};
+
+		render();
+
+		// Re-render when sync state changes so the strip updates
+		this.unsubSyncState = this.plugin.onSyncStateChange(() => render());
 	}
 
 	async onClose(): Promise<void> {
+		this.unsubSyncState?.();
+		this.unsubSyncState = null;
 		this.reactRoot?.unmount();
 		this.reactRoot = null;
 	}

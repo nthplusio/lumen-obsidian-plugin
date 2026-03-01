@@ -271,12 +271,12 @@ describe('LumenApp integration', () => {
 		expect(content).toContain('<RelatedNotesView');
 	});
 
-	it('ConflictBanner appears above TabBar', () => {
+	it('ConflictBanner appears below TabBar', () => {
 		const content = appSource();
 		const bannerIdx = content.indexOf('<ConflictBanner');
 		const tabBarIdx = content.indexOf('<TabBar');
 		expect(bannerIdx).toBeGreaterThan(-1);
 		expect(tabBarIdx).toBeGreaterThan(-1);
-		expect(bannerIdx).toBeLessThan(tabBarIdx);
+		expect(bannerIdx).toBeGreaterThan(tabBarIdx);
 	});
 });

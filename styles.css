@@ -145,7 +145,7 @@
 	gap: 2px;
 	padding: 6px 8px;
 	flex-shrink: 0;
-	background: var(--background-primary);
+	background: transparent;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -3684,4 +3684,94 @@
 /* Prevent layout shift from markdown paragraph margins during streaming */
 .lumen-chat-streaming-content p:last-child {
 	margin-bottom: 0;
+}
+
+/* ============================================
+   Compact mode (mobile merged header + tabs)
+   ============================================ */
+
+/* Compact sidebar header — tighter padding, flex row */
+.lumen-sidebar-header-compact {
+	padding: 4px 8px;
+	gap: 4px;
+}
+
+/* Compact tab bar — inline icon-only tabs, no background box */
+.lumen-tab-bar-compact {
+	display: flex;
+	gap: 2px;
+	padding: 0;
+	flex: 1;
+	border-bottom: none;
+	background: transparent;
+}
+
+.lumen-tab-bar-compact .lumen-tab {
+	flex: 0 0 auto;
+	padding: 4px 8px;
+	gap: 0;
+}
+
+.lumen-tab-bar-compact .lumen-tab-label {
+	display: none;
+}
+
+.lumen-tab-bar-compact .lumen-tab-active {
+	background: transparent;
+	box-shadow: none;
+}
+
+/* ============================================
+   Sync status strip (in-sidebar)
+   ============================================ */
+
+.lumen-sync-strip {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	flex-shrink: 0;
+	font-size: var(--font-ui-smaller);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-sync-strip-icon {
+	display: inline-flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.lumen-sync-strip-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.lumen-sync-strip-text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Reuse state classes from status bar (idle, active, error, etc.) */
+.lumen-sync-strip.lumen-sync-active .lumen-sync-strip-icon {
+	animation: lumen-spin 1.5s linear infinite;
+}
+
+/* ============================================
+   Mobile overrides
+   ============================================ */
+
+/* Bigger chat input on mobile for comfortable touch typing */
+.is-mobile .lumen-chat-input {
+	min-height: 44px;
+	font-size: 16px;
+	padding: 10px 14px;
+}
+
+/* Bigger send / stop / deep-research buttons on mobile */
+.is-mobile .lumen-chat-send-button,
+.is-mobile .lumen-chat-stop-button,
+.is-mobile .lumen-chat-deep-research-toggle {
+	width: 44px;
+	height: 44px;
 }

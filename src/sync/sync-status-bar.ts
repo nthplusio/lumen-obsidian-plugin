@@ -10,7 +10,7 @@ import type { SyncState } from '../types';
 import { networkStatus } from '../utils/network-status';
 
 /** Lucide icon name per sync state */
-const STATE_ICONS: Record<SyncState, string> = {
+export const STATE_ICONS: Record<SyncState, string> = {
 	idle: 'lumen-logo',
 	hashing: 'loader-2',
 	manifest: 'loader-2',
@@ -24,7 +24,7 @@ const STATE_ICONS: Record<SyncState, string> = {
 };
 
 /** CSS modifier class per sync state */
-const STATE_CLASSES: Record<SyncState, string> = {
+export const STATE_CLASSES: Record<SyncState, string> = {
 	idle: 'lumen-sync-idle',
 	hashing: 'lumen-sync-active',
 	manifest: 'lumen-sync-active',

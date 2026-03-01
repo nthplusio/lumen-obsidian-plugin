@@ -51,6 +51,7 @@ vi.mock('obsidian', () => ({
 		onOpen() {}
 		onClose() {}
 	},
+	Platform: { isDesktop: true, isMobile: false, isDesktopApp: true, isMobileApp: false },
 	setIcon: vi.fn(),
 	MarkdownRenderer: { render: vi.fn() },
 }));
@@ -84,6 +85,10 @@ describe('LumenMainView', () => {
 			settings: { apiKey: 'test-key', apiUrl: 'http://test' },
 			apiClient: { semanticSearch: vi.fn(), listTags: vi.fn() },
 			chatClient: null,
+			currentSyncState: 'idle',
+			currentSyncProgress: undefined,
+			currentIndexingProgress: undefined,
+			onSyncStateChange: vi.fn(() => () => {}),
 		};
 
 		view = new LumenMainView({} as any, mockPlugin);

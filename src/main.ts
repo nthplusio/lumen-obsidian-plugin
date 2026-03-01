@@ -25,7 +25,8 @@ import { logger } from './utils/logger';
 import { networkStatus } from './utils/network-status';
 import { ConflictResolutionModal } from './sync/conflict-resolution-modal';
 import type { ConflictResolution } from './sync/conflict-resolution-modal';
-import { DEFAULT_SETTINGS, type UnresolvedConflict, type LumenSettings } from './types';
+import { DEFAULT_SETTINGS, type SyncState, type UnresolvedConflict, type LumenSettings } from './types';
+import type { SyncProgress, IndexingProgress } from './ui/contexts/PluginContext';
 
 export default class LumenPlugin extends Plugin {
 	settings: LumenSettings = DEFAULT_SETTINGS;
@@ -60,6 +61,34 @@ export default class LumenPlugin extends Plugin {
 
 	private notifySettingsListeners(): void {
 		for (const cb of this.settingsListeners) cb();
+	}
+
+	// Sync state observable for React UI (mirrors SyncStatusBar state)
+	currentSyncState: SyncState = 'idle';
+	currentSyncProgress: SyncProgress | undefined;
+	currentIndexingProgress: IndexingProgress | undefined;
+	private syncStateListeners: Array<() => void> = [];
+
+	/** Register a listener for sync state changes (returns unsubscribe fn) */
+	onSyncStateChange(cb: () => void): () => void {
+		this.syncStateListeners.push(cb);
+		return () => {
+			this.syncStateListeners = this.syncStateListeners.filter(l => l !== cb);
+		};
+	}
+
+	private notifySyncStateListeners(): void {
+		for (const cb of this.syncStateListeners) cb();
+	}
+
+	/** Trigger a manual sync from the UI */
+	requestSync(): void {
+		this.triggerSync();
+	}
+
+	/** Cancel an active sync from the UI */
+	requestCancelSync(): void {
+		this.syncManager?.cancelSync();
 	}
 
 	/** Clear all unresolved conflicts (user dismissed) */
@@ -436,12 +465,19 @@ export default class LumenPlugin extends Plugin {
 			() => this.syncManager?.cancelSync(),
 		);
 
-		// Feed state changes and progress to the status bar
+		// Feed state changes and progress to the status bar + React context
 		this.syncManager.onStateChange((state) => {
 			this.syncStatusBar?.update(state);
+			this.currentSyncState = state;
+			this.currentSyncProgress = undefined;
+			this.currentIndexingProgress = undefined;
+			this.notifySyncStateListeners();
 		});
 		this.syncManager.onProgress((state, progress) => {
 			this.syncStatusBar?.update(state, progress);
+			this.currentSyncState = state;
+			this.currentSyncProgress = progress;
+			this.notifySyncStateListeners();
 		});
 
 		// Handle sync completion — persist settings, poll indexing, surface conflicts
@@ -557,10 +593,20 @@ export default class LumenPlugin extends Plugin {
 						status.indexing_status.progress,
 						serverTriggered,
 					);
+					this.currentIndexingProgress = {
+						indexed: status.indexing_status.indexed_files,
+						total: status.indexing_status.total_files,
+						percent: status.indexing_status.progress,
+						serverTriggered,
+					};
+					this.notifySyncStateListeners();
 				} else {
 					this.stopIndexingPoll();
 					this.pluginTriggeredIndexing = false;
 					this.syncStatusBar?.update('idle');
+					this.currentSyncState = 'idle';
+					this.currentIndexingProgress = undefined;
+					this.notifySyncStateListeners();
 					if (this.settings.lastSyncAt) {
 						this.syncStatusBar?.setLastSyncAt(this.settings.lastSyncAt);
 					}
