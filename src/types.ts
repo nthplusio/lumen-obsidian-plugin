@@ -327,6 +327,43 @@ export class RateLimitExceededError extends Error {
 	}
 }
 
+// ============================================================================
+// Tool Use / Thinking Types (for streaming progress)
+// ============================================================================
+
+/** Active tool use tracked during streaming */
+export interface ActiveToolUse {
+	id: string;
+	name: string;
+	status: 'running' | 'complete';
+}
+
+/** Thinking state during streaming */
+export interface ThinkingState {
+	active: boolean;
+	type: 'planning' | 'analyzing' | 'searching' | null;
+}
+
+// ============================================================================
+// Conversation Detail Types (for loading message history)
+// ============================================================================
+
+/** A single message from the server conversation history */
+export interface ConversationMessage {
+	id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	sources?: ChatSource[];
+	createdAt: string;
+}
+
+/** Full conversation with messages (from GET /api/conversations/:id) */
+export interface ConversationWithMessages {
+	id: string;
+	title: string | null;
+	messages: ConversationMessage[];
+}
+
 /** Options for similar document search */
 export interface SimilarDocumentOptions {
 	limit?: number;

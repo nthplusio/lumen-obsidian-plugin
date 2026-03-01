@@ -176,91 +176,199 @@ export interface ParsedSSEEvent {
 	metadata?: StreamMetadata;
 	/** Error message (from error event) */
 	error?: string;
+	/** Tool use started (from content_block_start with type tool_use) */
+	toolStart?: { id: string; name: string };
+	/** Tool use completed — the tool's ID (from content_block_stop for a tool block) */
+	toolComplete?: string;
+	/** Thinking state (from thinking event) */
+	thinking?: { type: string };
 }
 
 /**
- * Parse a chunk of SSE data incrementally.
+ * Stateful incremental SSE parser for streaming via fetch + ReadableStream.
  *
- * Splits on double-newline boundaries, parses complete events,
- * and returns the incomplete remainder for the next call.
+ * Tracks tool use blocks to correctly emit toolComplete events,
+ * and filters `<function_calls>` XML from text content.
+ */
+export class SSEStreamParser {
+	/** Map of content block index → tool use info (for matching content_block_stop) */
+	private activeToolBlocks = new Map<number, { id: string; name: string }>();
+
+	/** Whether we're inside a `<function_calls>` XML block in text content */
+	private inFunctionCall = false;
+
+	/**
+	 * Parse a chunk of SSE data incrementally.
+	 *
+	 * Splits on double-newline boundaries, parses complete events,
+	 * and returns the incomplete remainder for the next call.
+	 */
+	parse(buffer: string): { events: ParsedSSEEvent[]; remaining: string } {
+		const events: ParsedSSEEvent[] = [];
+
+		const blocks = buffer.split('\n\n');
+		const remaining = blocks.pop() ?? '';
+
+		for (const block of blocks) {
+			const trimmedBlock = block.trim();
+			if (!trimmedBlock) continue;
+
+			let eventType = '';
+			let dataStr = '';
+
+			for (const line of trimmedBlock.split('\n')) {
+				const trimmed = line.trim();
+				if (trimmed.startsWith('event: ')) {
+					eventType = trimmed.slice(7).trim();
+				} else if (trimmed.startsWith('data: ')) {
+					dataStr += (dataStr ? '\n' : '') + trimmed.slice(6);
+				} else if (trimmed.startsWith('data:')) {
+					dataStr += (dataStr ? '\n' : '') + trimmed.slice(5);
+				}
+			}
+
+			if (!dataStr) continue;
+
+			try {
+				const data = JSON.parse(dataStr) as Record<string, unknown>;
+				const event: ParsedSSEEvent = {};
+				let handled = false;
+
+				if (eventType === 'content_block_start') {
+					const contentBlock = data['content_block'] as Record<string, unknown> | undefined;
+					const blockIndex = data['index'] as number | undefined;
+					if (contentBlock?.['type'] === 'tool_use') {
+						const id = (contentBlock['id'] as string) ?? '';
+						const name = (contentBlock['name'] as string) ?? '';
+						if (typeof blockIndex === 'number') {
+							this.activeToolBlocks.set(blockIndex, { id, name });
+						}
+						event.toolStart = { id, name };
+						handled = true;
+					}
+				} else if (eventType === 'content_block_stop') {
+					const blockIndex = data['index'] as number | undefined;
+					if (typeof blockIndex === 'number') {
+						const toolInfo = this.activeToolBlocks.get(blockIndex);
+						if (toolInfo) {
+							event.toolComplete = toolInfo.id;
+							this.activeToolBlocks.delete(blockIndex);
+							handled = true;
+						}
+					}
+				} else if (eventType === 'content_block_delta') {
+					const delta = data['delta'] as Record<string, unknown> | undefined;
+					if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
+						const filtered = this.filterFunctionCalls(delta['text'] as string);
+						if (filtered) {
+							event.token = filtered;
+						}
+						handled = true;
+					}
+				} else if (eventType === 'thinking') {
+					const thinkingType = (data['type'] as string) ?? 'thinking';
+					event.thinking = { type: thinkingType };
+					handled = true;
+				} else if (eventType === 'lumen_metadata') {
+					const rawSources = data['sources'] as Array<Record<string, unknown>> | undefined;
+					if (Array.isArray(rawSources)) {
+						event.sources = rawSources
+							.filter(s => typeof s['path'] === 'string' && typeof s['score'] === 'number')
+							.map(s => ({ path: s['path'] as string, score: s['score'] as number }));
+					}
+					const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
+					event.metadata = {
+						sources: event.sources ?? [],
+						tokenUsage: {
+							input: (tokenUsage?.['input'] as number) ?? 0,
+							output: (tokenUsage?.['output'] as number) ?? 0,
+						},
+						turnsUsed: (data['turns_used'] as number) ?? 0,
+						turnsRemaining: (data['turns_remaining'] as number) ?? 0,
+					};
+					handled = true;
+				} else if (eventType === 'error') {
+					const errorObj = data['error'] as Record<string, unknown> | undefined;
+					event.error = (errorObj?.['message'] as string) ?? (data['message'] as string) ?? 'Unknown error';
+					handled = true;
+				}
+
+				if (!handled) continue;
+
+				// Only push events that have meaningful content
+				if (
+					event.token !== undefined ||
+					event.sources ||
+					event.metadata ||
+					event.error ||
+					event.toolStart ||
+					event.toolComplete ||
+					event.thinking
+				) {
+					events.push(event);
+				}
+			} catch {
+				// Skip malformed JSON blocks
+			}
+		}
+
+		return { events, remaining };
+	}
+
+	/** Reset parser state (call between conversations) */
+	reset(): void {
+		this.activeToolBlocks.clear();
+		this.inFunctionCall = false;
+	}
+
+	/**
+	 * Filter `<function_calls>...</function_calls>` XML from text content.
+	 * Tracks state across chunks since tags may span multiple tokens.
+	 * Returns the filtered text, or empty string if entirely inside a function call.
+	 */
+	private filterFunctionCalls(text: string): string {
+		let result = '';
+		let i = 0;
+
+		while (i < text.length) {
+			if (this.inFunctionCall) {
+				// Look for closing tag
+				const closeIdx = text.indexOf('</function_calls>', i);
+				if (closeIdx === -1) {
+					// Still inside — discard rest
+					break;
+				}
+				// Skip past closing tag
+				i = closeIdx + '</function_calls>'.length;
+				this.inFunctionCall = false;
+			} else {
+				// Look for opening tag
+				const openIdx = text.indexOf('<function_calls', i);
+				if (openIdx === -1) {
+					// No more tags — keep rest
+					result += text.slice(i);
+					break;
+				}
+				// Keep text before the tag
+				result += text.slice(i, openIdx);
+				this.inFunctionCall = true;
+				i = openIdx;
+			}
+		}
+
+		return result;
+	}
+}
+
+/**
+ * Parse a chunk of SSE data incrementally (stateless convenience wrapper).
  *
- * @param buffer Accumulated SSE text (may contain incomplete events)
- * @returns Parsed events and remaining incomplete buffer
+ * For streaming sessions that need tool tracking, use SSEStreamParser instead.
  */
 export function parseSSEChunk(buffer: string): {
 	events: ParsedSSEEvent[];
 	remaining: string;
 } {
-	const events: ParsedSSEEvent[] = [];
-
-	// Split on double newlines — SSE event boundaries
-	const blocks = buffer.split('\n\n');
-
-	// Last element may be incomplete — keep as remainder
-	const remaining = blocks.pop() ?? '';
-
-	for (const block of blocks) {
-		const trimmedBlock = block.trim();
-		if (!trimmedBlock) continue;
-
-		let eventType = '';
-		let dataStr = '';
-
-		for (const line of trimmedBlock.split('\n')) {
-			const trimmed = line.trim();
-			if (trimmed.startsWith('event: ')) {
-				eventType = trimmed.slice(7).trim();
-			} else if (trimmed.startsWith('data: ')) {
-				dataStr += (dataStr ? '\n' : '') + trimmed.slice(6);
-			} else if (trimmed.startsWith('data:')) {
-				dataStr += (dataStr ? '\n' : '') + trimmed.slice(5);
-			}
-		}
-
-		if (!dataStr) continue;
-
-		try {
-			const data = JSON.parse(dataStr) as Record<string, unknown>;
-			const event: ParsedSSEEvent = {};
-
-			if (eventType === 'content_block_delta') {
-				const delta = data['delta'] as Record<string, unknown> | undefined;
-				if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
-					event.token = delta['text'] as string;
-				}
-			} else if (eventType === 'lumen_metadata') {
-				const rawSources = data['sources'] as Array<Record<string, unknown>> | undefined;
-				if (Array.isArray(rawSources)) {
-					event.sources = rawSources
-						.filter(s => typeof s['path'] === 'string' && typeof s['score'] === 'number')
-						.map(s => ({ path: s['path'] as string, score: s['score'] as number }));
-				}
-				const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
-				event.metadata = {
-					sources: event.sources ?? [],
-					tokenUsage: {
-						input: (tokenUsage?.['input'] as number) ?? 0,
-						output: (tokenUsage?.['output'] as number) ?? 0,
-					},
-					turnsUsed: (data['turns_used'] as number) ?? 0,
-					turnsRemaining: (data['turns_remaining'] as number) ?? 0,
-				};
-			} else if (eventType === 'error') {
-				const errorObj = data['error'] as Record<string, unknown> | undefined;
-				event.error = (errorObj?.['message'] as string) ?? (data['message'] as string) ?? 'Unknown error';
-			} else {
-				// Skip non-content events (message_start, ping, etc.)
-				continue;
-			}
-
-			// Only push events that have meaningful content
-			if (event.token !== undefined || event.sources || event.metadata || event.error) {
-				events.push(event);
-			}
-		} catch {
-			// Skip malformed JSON blocks
-		}
-	}
-
-	return { events, remaining };
+	const parser = new SSEStreamParser();
+	return parser.parse(buffer);
 }

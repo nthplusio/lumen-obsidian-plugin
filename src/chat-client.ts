@@ -23,13 +23,14 @@ import type {
 	ChatSource,
 	ChatStreamResult,
 	ConversationListResponse,
+	ConversationWithMessages,
 	PlanTier,
 	StreamMetadata,
 	WorkspacePlanInfo,
 } from './types';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from './types';
 import { LumenHttpClient } from './http-client';
-import { parseSSEChunk, parseConversationSSE } from './utils/sse-parser';
+import { SSEStreamParser, parseSSEChunk, parseConversationSSE } from './utils/sse-parser';
 import { logger } from './utils/logger';
 
 /** Plan cache TTL: 5 minutes */
@@ -147,6 +148,16 @@ export class ChatClient extends LumenHttpClient {
 		logger.info(`Conversation deleted: ${id}`);
 	}
 
+	/** Get a conversation with its full message history */
+	async getConversation(id: string): Promise<ConversationWithMessages> {
+		const response = await requestUrl({
+			url: `${this.baseUrl}/api/conversations/${id}`,
+			method: 'GET',
+			headers: this.headers,
+		});
+		return response.json as ConversationWithMessages;
+	}
+
 	// -----------------------------------------------------------------------
 	// Send Message (SSE streaming)
 	// -----------------------------------------------------------------------
@@ -171,6 +182,9 @@ export class ChatClient extends LumenHttpClient {
 		options: {
 			deepResearch?: boolean;
 			onToken?: (token: string) => void;
+			onToolStart?: (tool: { id: string; name: string }) => void;
+			onToolComplete?: (id: string) => void;
+			onThinking?: (type: string) => void;
 			signal?: AbortSignal;
 		} = {},
 	): Promise<ChatStreamResult> {
@@ -224,6 +238,9 @@ export class ChatClient extends LumenHttpClient {
 		options: {
 			deepResearch?: boolean;
 			onToken?: (token: string) => void;
+			onToolStart?: (tool: { id: string; name: string }) => void;
+			onToolComplete?: (id: string) => void;
+			onThinking?: (type: string) => void;
 			signal?: AbortSignal;
 		},
 	): Promise<ChatStreamResult> {
@@ -267,6 +284,7 @@ export class ChatClient extends LumenHttpClient {
 
 					// Stream SSE events
 					let buffer = '';
+					const sseParser = new SSEStreamParser();
 					const tokens: string[] = [];
 					let sources: ChatSource[] = [];
 					let metadata: StreamMetadata | null = null;
@@ -276,7 +294,7 @@ export class ChatClient extends LumenHttpClient {
 					res.on('data', (chunk: string) => {
 						buffer += chunk;
 
-						const { events, remaining } = parseSSEChunk(buffer);
+						const { events, remaining } = sseParser.parse(buffer);
 						buffer = remaining;
 
 						for (const event of events) {
@@ -292,6 +310,15 @@ export class ChatClient extends LumenHttpClient {
 							}
 							if (event.error) {
 								errors.push(event.error);
+							}
+							if (event.toolStart) {
+								options.onToolStart?.(event.toolStart);
+							}
+							if (event.toolComplete) {
+								options.onToolComplete?.(event.toolComplete);
+							}
+							if (event.thinking) {
+								options.onThinking?.(event.thinking.type);
 							}
 						}
 					});

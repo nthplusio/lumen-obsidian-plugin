@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MarkdownRenderer, setIcon } from 'obsidian';
-import type { ChatMessage, ChatSource, ConversationSummary } from '../../../types';
+import type { ActiveToolUse, ChatMessage, ChatSource, ConversationSummary, ThinkingState } from '../../../types';
 import { usePlugin } from '../../contexts/PluginContext';
 import { useChat } from '../../hooks/useChat';
 import { LoadingDots, SourceChips } from '../shared';
@@ -43,6 +43,8 @@ export function ChatView() {
 				error={state.error}
 				upgradeMessage={state.upgradeMessage}
 				lastTurnsInfo={state.lastTurnsInfo}
+				activeTools={state.activeTools}
+				thinking={state.thinking}
 				onSuggestionClick={chat.sendMessage}
 			/>
 			<ChatInputArea
@@ -115,7 +117,7 @@ interface ConversationDropdownProps {
 	conversations: ConversationSummary[];
 	loading: boolean;
 	activeId: string | null;
-	onSelect: (id: string, title: string | null) => void;
+	onSelect: (id: string, title: string | null) => Promise<void>;
 }
 
 function ConversationDropdown({ conversations, loading, activeId, onSelect }: ConversationDropdownProps) {
@@ -141,7 +143,7 @@ function ConversationDropdown({ conversations, loading, activeId, onSelect }: Co
 				<div
 					key={conv.id}
 					className={`lumen-chat-conversation-item ${conv.id === activeId ? 'is-active' : ''}`}
-					onClick={() => onSelect(conv.id, conv.title)}
+					onClick={() => void onSelect(conv.id, conv.title)}
 				>
 					<div className="lumen-chat-conversation-item-title">
 						{conv.title ?? 'Untitled'}
@@ -164,10 +166,12 @@ interface ChatMessagesProps {
 	error: string | null;
 	upgradeMessage: string | null;
 	lastTurnsInfo: { turnsUsed: number; turnsRemaining: number } | null;
+	activeTools: ActiveToolUse[];
+	thinking: ThinkingState | null;
 	onSuggestionClick: (prompt: string) => Promise<void>;
 }
 
-function ChatMessages({ messages, streamContent, isStreaming, error, upgradeMessage, lastTurnsInfo, onSuggestionClick }: ChatMessagesProps) {
+function ChatMessages({ messages, streamContent, isStreaming, error, upgradeMessage, lastTurnsInfo, activeTools, thinking, onSuggestionClick }: ChatMessagesProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	// Auto-scroll to bottom on new messages or streaming
@@ -175,7 +179,7 @@ function ChatMessages({ messages, streamContent, isStreaming, error, upgradeMess
 		if (containerRef.current) {
 			containerRef.current.scrollTop = containerRef.current.scrollHeight;
 		}
-	}, [messages, streamContent]);
+	}, [messages, streamContent, activeTools]);
 
 	const hasContent = messages.length > 0 || isStreaming || error || upgradeMessage;
 
@@ -195,6 +199,9 @@ function ChatMessages({ messages, streamContent, isStreaming, error, upgradeMess
 					</MessageBubble>
 				);
 			})}
+			{isStreaming && activeTools.length > 0 && (
+				<ToolProgress tools={activeTools} thinking={thinking} />
+			)}
 			{isStreaming && <StreamingBubble content={streamContent} />}
 			{error && <ErrorBubble message={error} />}
 			{upgradeMessage && <UpgradeBubble message={upgradeMessage} />}
@@ -222,17 +229,58 @@ function ChatEmptyState({ onSuggestionClick }: { onSuggestionClick: (prompt: str
 			<div className="lumen-chat-empty-icon" ref={iconRef} />
 			<p className="lumen-chat-empty-title">Ask questions about your vault</p>
 			<p className="lumen-chat-empty-desc">Get AI-powered answers based on your notes</p>
-			<div className="lumen-chat-suggestions">
+			<div className="lumen-chat-suggestions" role="list">
 				{prompts.map(prompt => (
-					<button
+					<div
 						key={prompt}
 						className="lumen-chat-suggestion"
+						role="listitem"
 						onClick={() => void onSuggestionClick(prompt)}
 					>
 						{prompt}
-					</button>
+					</div>
 				))}
 			</div>
+		</div>
+	);
+}
+
+// --- ToolProgress ---
+
+const TOOL_LABELS: Record<string, string> = {
+	semantic_search: 'Searching vault',
+	get_document_context: 'Reading document',
+	search: 'Searching',
+	retrieve: 'Retrieving',
+	analyze: 'Analyzing',
+	summarize: 'Summarizing',
+};
+
+function getToolLabel(name: string): string {
+	return TOOL_LABELS[name] ?? name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function ToolProgress({ tools, thinking }: { tools: ActiveToolUse[]; thinking: ThinkingState | null }) {
+	return (
+		<div className="lumen-tool-progress">
+			{thinking?.active && (
+				<div className="lumen-tool-progress-item">
+					<span className="lumen-tool-spinner" />
+					<span className="lumen-tool-label">Thinking...</span>
+				</div>
+			)}
+			{tools.map(tool => (
+				<div key={tool.id} className="lumen-tool-progress-item">
+					{tool.status === 'running' ? (
+						<span className="lumen-tool-spinner" />
+					) : (
+						<span className="lumen-tool-check">&#10003;</span>
+					)}
+					<span className="lumen-tool-label">
+						{getToolLabel(tool.name)}{tool.status === 'running' ? '...' : ''}
+					</span>
+				</div>
+			))}
 		</div>
 	);
 }
@@ -290,22 +338,43 @@ function MessageContent({ message }: { message: ChatMessage }) {
 	return <div className="lumen-chat-message-content" ref={ref} />;
 }
 
-// --- StreamingBubble ---
+// --- StreamingBubble (with throttled markdown rendering) ---
 
 function StreamingBubble({ content }: { content: string }) {
+	const { app, component } = usePlugin();
 	const ref = useRef<HTMLDivElement>(null);
+	const lastRenderedRef = useRef('');
+	const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
-		if (!ref.current) return;
-		if (content) {
-			ref.current.textContent = content;
-		}
-	}, [content]);
+		if (!ref.current || !content) return;
+
+		// Throttle markdown rendering to ~50ms intervals
+		if (throttleRef.current) return; // Already scheduled
+
+		throttleRef.current = setTimeout(() => {
+			throttleRef.current = null;
+			if (!ref.current || lastRenderedRef.current === content) return;
+			lastRenderedRef.current = content;
+			ref.current.empty();
+			MarkdownRenderer.render(app, content, ref.current, '', component);
+		}, 50);
+	}, [content, app, component]);
+
+	// Final render on unmount or when content stabilizes
+	useEffect(() => {
+		return () => {
+			if (throttleRef.current) {
+				clearTimeout(throttleRef.current);
+				throttleRef.current = null;
+			}
+		};
+	}, []);
 
 	return (
 		<div className="lumen-chat-message lumen-chat-message-assistant">
 			<MessageHeader role="assistant" />
-			<div className="lumen-chat-message-content" ref={ref} />
+			<div className="lumen-chat-message-content lumen-chat-streaming-content" ref={ref} />
 			{!content && (
 				<div className="lumen-chat-loading-inline">
 					<LoadingDots />

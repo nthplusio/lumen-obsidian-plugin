@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef } from 'react';
-import type { ChatMessage, ChatSource, ConversationSummary } from '../../types';
+import type { ActiveToolUse, ChatMessage, ChatSource, ConversationSummary, ThinkingState } from '../../types';
 import { PlanUpgradeRequiredError, RateLimitExceededError } from '../../types';
 import { logger } from '../../utils/logger';
 import { usePlugin } from '../contexts/PluginContext';
@@ -37,6 +37,10 @@ interface ChatState {
 	conversationsLoading: boolean;
 	/** Turns info from last deep research response */
 	lastTurnsInfo: TurnsInfo | null;
+	/** Active tool uses during streaming */
+	activeTools: ActiveToolUse[];
+	/** Current thinking state during streaming */
+	thinking: ThinkingState | null;
 }
 
 type ChatAction =
@@ -57,7 +61,11 @@ type ChatAction =
 	| { type: 'SET_CONVERSATIONS'; conversations: ConversationSummary[]; loading: boolean }
 	| { type: 'SET_CONVERSATIONS_LOADING' }
 	| { type: 'TOGGLE_ACTIVE_NOTE_CONTEXT' }
-	| { type: 'SET_ACTIVE_NOTE'; path: string | null };
+	| { type: 'SET_ACTIVE_NOTE'; path: string | null }
+	| { type: 'TOOL_START'; id: string; name: string }
+	| { type: 'TOOL_COMPLETE'; id: string }
+	| { type: 'SET_THINKING'; thinking: ThinkingState | null }
+	| { type: 'SET_MESSAGES'; messages: ChatMessage[] };
 
 const initialState: ChatState = {
 	messages: [],
@@ -76,6 +84,8 @@ const initialState: ChatState = {
 	conversations: [],
 	conversationsLoading: false,
 	lastTurnsInfo: null,
+	activeTools: [],
+	thinking: null,
 };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -88,7 +98,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				upgradeMessage: null,
 			};
 		case 'START_STREAMING':
-			return { ...state, status: 'streaming', streamContent: '' };
+			return { ...state, status: 'streaming', streamContent: '', activeTools: [], thinking: null };
 		case 'STREAM_TOKEN':
 			return { ...state, streamContent: action.content };
 		case 'FINISH_STREAMING': {
@@ -103,6 +113,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				streamContent: '',
 				messages: [...state.messages, msg],
 				lastTurnsInfo: action.turnsInfo ?? null,
+				activeTools: [],
+				thinking: null,
 			};
 		}
 		case 'STREAM_CANCELLED':
@@ -113,6 +125,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				messages: action.partialContent
 					? [...state.messages, { role: 'assistant', content: action.partialContent }]
 					: state.messages,
+				activeTools: [],
+				thinking: null,
 			};
 		case 'SET_ERROR':
 			return { ...state, status: 'idle', streamContent: '', error: action.error };
@@ -166,6 +180,22 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			return { ...state, activeNoteContextEnabled: !state.activeNoteContextEnabled };
 		case 'SET_ACTIVE_NOTE':
 			return { ...state, activeNotePath: action.path };
+		case 'TOOL_START':
+			return {
+				...state,
+				activeTools: [...state.activeTools, { id: action.id, name: action.name, status: 'running' }],
+			};
+		case 'TOOL_COMPLETE':
+			return {
+				...state,
+				activeTools: state.activeTools.map(t =>
+					t.id === action.id ? { ...t, status: 'complete' as const } : t,
+				),
+			};
+		case 'SET_THINKING':
+			return { ...state, thinking: action.thinking };
+		case 'SET_MESSAGES':
+			return { ...state, messages: action.messages };
 	}
 }
 
@@ -175,7 +205,7 @@ export interface UseChatReturn {
 	cancelMessage: () => void;
 	startNewChat: () => void;
 	deleteConversation: () => Promise<void>;
-	switchConversation: (id: string, title: string | null) => void;
+	switchConversation: (id: string, title: string | null) => Promise<void>;
 	toggleDeepResearch: () => void;
 	toggleActiveNoteContext: () => void;
 	toggleConversationDropdown: () => void;
@@ -248,6 +278,17 @@ export function useChat(): UseChatReturn {
 					streamedContent += token;
 					dispatch({ type: 'STREAM_TOKEN', content: streamedContent });
 				},
+				onToolStart: (tool) => {
+					logger.debug(`Chat: tool started — ${tool.name} (${tool.id})`);
+					dispatch({ type: 'TOOL_START', id: tool.id, name: tool.name });
+				},
+				onToolComplete: (id) => {
+					logger.debug(`Chat: tool completed — ${id}`);
+					dispatch({ type: 'TOOL_COMPLETE', id });
+				},
+				onThinking: (type) => {
+					dispatch({ type: 'SET_THINKING', thinking: { active: true, type: type as 'planning' | 'analyzing' | 'searching' | null } });
+				},
 			});
 
 			logger.info(`Chat: complete (${response.content.length} chars, ${response.sources.length} sources)`);
@@ -307,9 +348,28 @@ export function useChat(): UseChatReturn {
 		dispatch({ type: 'NEW_CHAT' });
 	}, [state.conversationId, plugin]);
 
-	const switchConversation = useCallback((id: string, title: string | null) => {
+	const switchConversation = useCallback(async (id: string, title: string | null) => {
 		dispatch({ type: 'SET_CONVERSATION', id, title });
-	}, []);
+
+		// Load conversation messages from server
+		const chatClient = plugin.chatClient;
+		if (!chatClient) return;
+
+		try {
+			const conversation = await chatClient.getConversation(id);
+			const messages: ChatMessage[] = conversation.messages.map(msg => ({
+				role: msg.role,
+				content: msg.content,
+				sources: msg.sources,
+			}));
+			dispatch({ type: 'SET_MESSAGES', messages });
+			if (conversation.title) {
+				dispatch({ type: 'SET_CONVERSATION', id, title: conversation.title });
+			}
+		} catch (err) {
+			logger.warn(`Failed to load conversation messages: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}, [plugin]);
 
 	const toggleDeepResearch = useCallback(() => {
 		dispatch({ type: 'TOGGLE_DEEP_RESEARCH' });

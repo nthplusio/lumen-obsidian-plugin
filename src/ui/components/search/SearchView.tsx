@@ -226,15 +226,16 @@ function TagFilterPanel({ tagCache, selectedTags, onAddTag, onRemoveTag }: TagFi
 
 function SearchHistory({ queries, onSelect }: { queries: string[]; onSelect: (q: string) => void }) {
 	return (
-		<div className="lumen-search-history">
+		<div className="lumen-search-history" role="list">
 			{queries.map(q => (
-				<button
+				<div
 					key={q}
 					className="lumen-search-history-item"
+					role="listitem"
 					onClick={() => onSelect(q)}
 				>
 					<span className="lumen-search-history-text">{q}</span>
-				</button>
+				</div>
 			))}
 		</div>
 	);

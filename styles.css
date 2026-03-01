@@ -362,24 +362,22 @@
 }
 
 .lumen-chat-suggestion {
-	padding: 10px 14px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 8px;
+	padding: 6px 10px;
+	border: none;
+	border-radius: 4px;
 	background: transparent;
 	color: var(--text-muted);
 	cursor: pointer;
 	font-size: var(--font-ui-small);
 	text-align: left;
 	line-height: 1.4;
-	transition: all 180ms ease;
+	transition: background 150ms ease, color 150ms ease;
 }
 
 .lumen-chat-suggestion:hover {
-	background: var(--background-secondary);
+	background: var(--background-modifier-hover);
 	color: var(--text-normal);
-	border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-	transform: translateY(-1px);
+	text-decoration: underline;
 }
 
 /* Input area */
@@ -3149,19 +3147,20 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 6px 10px;
-	border: none;
+	padding: 4px 8px;
 	background: transparent;
-	color: var(--text-normal);
+	color: var(--text-muted);
 	cursor: pointer;
 	text-align: left;
 	font-size: var(--font-ui-small);
-	border-radius: var(--radius-s);
-	transition: background 100ms ease;
+	border-radius: 4px;
+	transition: background 100ms ease, color 100ms ease;
 }
 
 .lumen-search-history-item:hover {
 	background: var(--background-modifier-hover);
+	text-decoration: underline;
+	color: var(--text-normal);
 }
 
 .lumen-search-history-text {
@@ -3542,4 +3541,69 @@
 
 .lumen-conflict-modal-btn-both {
 	color: var(--text-muted);
+}
+
+/* ============================================
+   Tool Progress (Chat Streaming)
+   ============================================ */
+
+.lumen-tool-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 12px;
+	margin-bottom: 4px;
+}
+
+.lumen-tool-progress-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.lumen-tool-spinner {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--text-accent);
+	border-radius: 50%;
+	animation: lumen-spin 0.6s linear infinite;
+	flex-shrink: 0;
+}
+
+@keyframes lumen-spin {
+	to { transform: rotate(360deg); }
+}
+
+.lumen-tool-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	font-size: 10px;
+	color: var(--text-success);
+	flex-shrink: 0;
+}
+
+.lumen-tool-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* ============================================
+   Streaming Markdown Content
+   ============================================ */
+
+.lumen-chat-streaming-content {
+	min-height: 1.4em;
+}
+
+/* Prevent layout shift from markdown paragraph margins during streaming */
+.lumen-chat-streaming-content p:last-child {
+	margin-bottom: 0;
 }
