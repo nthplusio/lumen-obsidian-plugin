@@ -466,8 +466,11 @@ function ChatInputArea({
 	useEffect(() => {
 		if (sendIconRef.current) setIcon(sendIconRef.current, 'send');
 		if (stopIconRef.current) setIcon(stopIconRef.current, 'square');
+	}, [status]);
+
+	useEffect(() => {
 		if (sparklesRef.current) setIcon(sparklesRef.current, 'sparkles');
-	}, []);
+	}, [canDeepResearch]);
 
 	const handleSend = useCallback(() => {
 		const msg = input.trim();
@@ -496,7 +499,7 @@ function ChatInputArea({
 
 	useEffect(() => {
 		if (noteIconRef.current) setIcon(noteIconRef.current, 'file-text');
-	}, []);
+	}, [activeNotePath]);
 
 	const isBusy = status !== 'idle';
 	const activeFileName = activeNotePath?.split('/').pop()?.replace(/\.md$/, '') ?? null;
