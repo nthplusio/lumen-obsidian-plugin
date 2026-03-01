@@ -9,7 +9,9 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "vitest",
 		"test:run": "vitest run",
-		"test:coverage": "vitest run --coverage"
+		"test:coverage": "vitest run --coverage",
+		"check:help": "node scripts/check-help-coverage.mjs",
+		"prepare": "git config core.hooksPath .githooks"
 	},
 	"devDependencies": {
 		"@testing-library/jest-dom": "^6.9.1",

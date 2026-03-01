@@ -30,6 +30,9 @@ jobs:
       - name: Test
         run: npm run test:run
 
+      - name: Check help documentation coverage
+        run: node scripts/check-help-coverage.mjs
+
       - name: Build
         run: npm run build
 

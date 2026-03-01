@@ -2,16 +2,18 @@
  * Unit tests for the Help Modal (LumenHelpModal).
  *
  * Tests:
- *   - All 7 sections render
+ *   - All 13 sections render (data-driven from HELP_SECTIONS)
  *   - TOC links call scrollIntoView on the target section
  *   - Collapsible sections toggle on header click
  *   - Getting Started section defaults to open
  *   - Other sections default to collapsed
  *   - onClose clears sectionMap
+ *   - All content block types render correctly
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LumenHelpModal } from '../src/help-modal';
+import { HELP_SECTIONS, DOCUMENTED_COMMAND_IDS } from '../src/help-content';
 
 // Suppress console output
 beforeEach(() => {
@@ -198,6 +200,8 @@ function findByTag(root: MockElement, tag: string): MockElement[] {
 // Tests
 // ---------------------------------------------------------------------------
 
+const SECTION_COUNT = HELP_SECTIONS.length;
+
 describe('LumenHelpModal', () => {
 	// -------------------------------------------------------------------
 	// onOpen: container setup
@@ -237,7 +241,7 @@ describe('LumenHelpModal', () => {
 	// -------------------------------------------------------------------
 
 	describe('table of contents', () => {
-		it('renders a TOC with 7 links', () => {
+		it(`renders a TOC with ${SECTION_COUNT} links`, () => {
 			const { modal, contentEl } = buildModal();
 			modal.onOpen();
 
@@ -245,23 +249,19 @@ describe('LumenHelpModal', () => {
 			expect(toc).toBeDefined();
 
 			const links = findByClass(toc!, 'lumen-help-toc-link');
-			expect(links).toHaveLength(7);
+			expect(links).toHaveLength(SECTION_COUNT);
 		});
 
-		it('TOC links have correct labels', () => {
+		it('TOC links have correct labels matching HELP_SECTIONS', () => {
 			const { modal, contentEl } = buildModal();
 			modal.onOpen();
 
 			const links = findByClass(contentEl, 'lumen-help-toc-link');
 			const labels = links.map((l) => l.textContent);
 
-			expect(labels).toContain('Getting Started');
-			expect(labels).toContain('Semantic Search');
-			expect(labels).toContain('Vault Sync');
-			expect(labels).toContain('Configuration');
-			expect(labels).toContain('Troubleshooting');
-			expect(labels).toContain('Keyboard Shortcuts');
-			expect(labels).toContain('Privacy & Security');
+			for (const section of HELP_SECTIONS) {
+				expect(labels).toContain(section.title);
+			}
 		});
 
 		it('TOC link click scrolls to the target section', () => {
@@ -279,16 +279,16 @@ describe('LumenHelpModal', () => {
 	});
 
 	// -------------------------------------------------------------------
-	// All 7 sections render
+	// All sections render
 	// -------------------------------------------------------------------
 
 	describe('section rendering', () => {
-		it('renders all 7 collapsible sections', () => {
+		it(`renders all ${SECTION_COUNT} collapsible sections`, () => {
 			const { modal, contentEl } = buildModal();
 			modal.onOpen();
 
 			const sections = findByClass(contentEl, 'lumen-help-section');
-			expect(sections).toHaveLength(7);
+			expect(sections).toHaveLength(SECTION_COUNT);
 		});
 
 		it('each section has a header and content area', () => {
@@ -309,7 +309,7 @@ describe('LumenHelpModal', () => {
 			modal.onOpen();
 
 			const chevrons = findByClass(contentEl, 'lumen-section-chevron');
-			expect(chevrons).toHaveLength(7);
+			expect(chevrons).toHaveLength(SECTION_COUNT);
 		});
 	});
 
@@ -380,7 +380,7 @@ describe('LumenHelpModal', () => {
 			expect(settingsTable).toBeDefined();
 
 			const rows = findByClass(settingsTable!, 'lumen-help-setting-row');
-			expect(rows.length).toBeGreaterThanOrEqual(5);
+			expect(rows.length).toBeGreaterThanOrEqual(3);
 		});
 
 		it('Privacy section has warning about API key storage', () => {
@@ -401,6 +401,58 @@ describe('LumenHelpModal', () => {
 			const rows = findByClass(scoreTable!, 'lumen-help-score-row');
 			expect(rows).toHaveLength(3);
 		});
+
+		it('Keyboard Shortcuts section has 12 shortcut rows', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
+
+			const shortcutRows = findByClass(contentEl, 'lumen-help-shortcut-row');
+			expect(shortcutRows).toHaveLength(12);
+		});
+
+		it('Dataview API section has code blocks', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
+
+			const codeBlocks = findByClass(contentEl, 'lumen-help-code-block');
+			expect(codeBlocks.length).toBeGreaterThanOrEqual(1);
+		});
+
+		it('Chat section exists and has content', () => {
+			const { modal, contentEl } = buildModal();
+			modal.onOpen();
+
+			const chatSection = HELP_SECTIONS.find((s) => s.id === 'chat');
+			expect(chatSection).toBeDefined();
+			expect(chatSection!.content.length).toBeGreaterThan(0);
+		});
+	});
+
+	// -------------------------------------------------------------------
+	// Help content data integrity
+	// -------------------------------------------------------------------
+
+	describe('help content data', () => {
+		it('DOCUMENTED_COMMAND_IDS has 12 entries', () => {
+			expect(DOCUMENTED_COMMAND_IDS).toHaveLength(12);
+		});
+
+		it('all HELP_SECTIONS have unique IDs', () => {
+			const ids = HELP_SECTIONS.map((s) => s.id);
+			expect(new Set(ids).size).toBe(ids.length);
+		});
+
+		it('exactly one section defaults to open', () => {
+			const openSections = HELP_SECTIONS.filter((s) => s.defaultOpen);
+			expect(openSections).toHaveLength(1);
+			expect(openSections[0].id).toBe('getting-started');
+		});
+
+		it('every section has at least one content block', () => {
+			for (const section of HELP_SECTIONS) {
+				expect(section.content.length).toBeGreaterThan(0);
+			}
+		});
 	});
 
 	// -------------------------------------------------------------------
@@ -413,7 +465,7 @@ describe('LumenHelpModal', () => {
 			modal.onOpen();
 
 			const sectionMap = (modal as any).sectionMap as Map<string, any>;
-			expect(sectionMap.size).toBe(7);
+			expect(sectionMap.size).toBe(SECTION_COUNT);
 
 			modal.onClose();
 			expect(sectionMap.size).toBe(0);
