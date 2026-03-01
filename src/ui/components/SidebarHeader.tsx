@@ -4,6 +4,9 @@
  * Renders the full-color Lumen icon + title on the left,
  * and a help button on the right that opens LumenHelpModal.
  *
+ * The sync status strip is rendered in the center of the header,
+ * replacing the "Lumen" title text when present.
+ *
  * In compact mode (mobile), hides the title text and accepts
  * children (e.g. inline TabBar) between the brand icon and help button.
  */
@@ -17,9 +20,11 @@ import { usePlugin } from '../contexts/PluginContext';
 interface SidebarHeaderProps {
 	compact?: boolean;
 	children?: React.ReactNode;
+	/** Sync status strip element to render centered in the header */
+	syncStrip?: React.ReactNode;
 }
 
-export function SidebarHeader({ compact, children }: SidebarHeaderProps) {
+export function SidebarHeader({ compact, children, syncStrip }: SidebarHeaderProps) {
 	const { app } = usePlugin();
 	const iconRef = useRef<HTMLSpanElement>(null);
 	const helpRef = useRef<HTMLButtonElement>(null);
@@ -49,8 +54,9 @@ export function SidebarHeader({ compact, children }: SidebarHeaderProps) {
 		<div className={className}>
 			<div className="lumen-sidebar-header-brand">
 				<span ref={iconRef} className="lumen-sidebar-header-icon" />
-				{!compact && <span className="lumen-sidebar-header-title">Lumen</span>}
+				{!compact && !syncStrip && <span className="lumen-sidebar-header-title">Lumen</span>}
 			</div>
+			{syncStrip}
 			{children}
 			<button
 				ref={helpRef}

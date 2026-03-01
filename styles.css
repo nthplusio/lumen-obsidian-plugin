@@ -3728,11 +3728,11 @@
 .lumen-sync-strip {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 4px 10px;
-	flex-shrink: 0;
+	justify-content: center;
+	gap: 4px;
+	flex: 1;
+	min-width: 0;
 	font-size: var(--font-ui-smaller);
-	border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .lumen-sync-strip-icon {

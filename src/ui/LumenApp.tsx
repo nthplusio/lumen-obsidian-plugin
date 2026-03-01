@@ -75,21 +75,22 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 			);
 		}
 
+		const syncStrip = showSyncStrip ? <SyncStatusStrip /> : undefined;
+
 		return (
 			<PluginProvider value={context}>
 				{isMobile ? (
 					/* Mobile: merged header + icon-only tabs in one row */
-					<SidebarHeader compact>
+					<SidebarHeader compact syncStrip={syncStrip}>
 						<TabBar compact activeMode={activeMode} onModeChange={handleModeChange} />
 					</SidebarHeader>
 				) : (
 					/* Desktop: separate header and tab bar rows */
 					<>
-						<SidebarHeader />
+						<SidebarHeader syncStrip={syncStrip} />
 						<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
 					</>
 				)}
-				{showSyncStrip && <SyncStatusStrip />}
 				<ConflictBanner />
 				{activeMode === 'search' && <SearchView />}
 				{activeMode === 'chat' && <ChatView />}
