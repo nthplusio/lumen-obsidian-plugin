@@ -120,6 +120,7 @@
 	justify-content: center;
 	width: 28px;
 	height: 28px;
+	padding: 0;
 	border: none;
 	border-radius: 6px;
 	background: transparent;
@@ -277,6 +278,7 @@
 	justify-content: center;
 	width: 28px;
 	height: 28px;
+	padding: 0;
 	border: none;
 	border-radius: 6px;
 	background: transparent;
@@ -301,6 +303,7 @@
 	justify-content: center;
 	width: 28px;
 	height: 28px;
+	padding: 0;
 	border: none;
 	border-radius: 6px;
 	background: transparent;
@@ -494,6 +497,7 @@
 	flex-shrink: 0;
 	width: 38px;
 	height: 38px;
+	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -524,6 +528,7 @@
 	flex-shrink: 0;
 	width: 38px;
 	height: 38px;
+	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -558,6 +563,7 @@
 	flex-shrink: 0;
 	width: 38px;
 	height: 38px;
+	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -579,8 +585,8 @@
 }
 
 .lumen-chat-stop-button svg {
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 }
 
 /* Rate limit banner */
@@ -2969,14 +2975,15 @@
    ============================================ */
 
 .lumen-chat-note-context-toggle {
+	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 38px;
+	height: 38px;
 	padding: 0;
-	border: 1px solid transparent;
-	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
 	background: transparent;
 	color: var(--text-muted);
 	cursor: pointer;
@@ -2995,8 +3002,8 @@
 }
 
 .lumen-chat-note-context-toggle svg {
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 }
 
 .lumen-chat-note-context-bar {
