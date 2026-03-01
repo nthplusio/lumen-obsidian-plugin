@@ -38,8 +38,27 @@ function flameGroup(): string {
 </g>`;
 }
 
-/** Full brand mark: flame icon */
+/** Full brand mark: flame icon (monochrome, for Obsidian's icon system) */
 export const LUMEN_LOGO_SVG = flameGroup();
+
+/**
+ * Full-color brand icon: yellow rounded-rect background + black flame.
+ * Multi-color so can't use addIcon()/setIcon(). Render via ref + innerHTML.
+ */
+export const LUMEN_BRAND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect x="5" y="5" width="90" height="90" rx="18" fill="#fccd41"/>
+  <g transform="translate(13.4,0) scale(0.4878) translate(-60,-5)">
+    <g transform="translate(10,10)">
+      <g transform="matrix(1.8554,0,0,1.8554,35.938,8.312)" fill="#000">
+        <g transform="scale(1,-1)">
+          <g transform="translate(0,-96)">
+            <path d="${FLAME_PATH}"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>`;
 
 /** Brand mark with search accent (magnifying glass at bottom-right) */
 export const LUMEN_SEARCH_SVG = `${flameGroup()}

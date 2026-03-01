@@ -42,6 +42,15 @@ vi.mock('obsidian', () => ({
 		}
 	},
 	WorkspaceLeaf: class {},
+	Modal: class {
+		app: any;
+		contentEl = { empty: () => {}, createEl: () => ({}), createDiv: () => ({}), addClass: () => {} };
+		constructor(app: any) { this.app = app; }
+		open() {}
+		close() {}
+		onOpen() {}
+		onClose() {}
+	},
 	setIcon: vi.fn(),
 	MarkdownRenderer: { render: vi.fn() },
 }));

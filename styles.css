@@ -67,6 +67,64 @@
 	overflow: hidden;
 }
 
+/* Sidebar header (brand + help) */
+.lumen-sidebar-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 8px;
+	flex-shrink: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-sidebar-header-brand {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.lumen-sidebar-header-icon {
+	display: flex;
+	align-items: center;
+	width: 20px;
+	height: 20px;
+}
+
+.lumen-sidebar-header-icon svg {
+	width: 100%;
+	height: 100%;
+}
+
+.lumen-sidebar-header-title {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.lumen-sidebar-header-help {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.lumen-sidebar-header-help:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+}
+
+.lumen-sidebar-header-help svg {
+	width: 14px;
+	height: 14px;
+}
+
 /* Tab bar */
 .lumen-tab-bar {
 	display: flex;

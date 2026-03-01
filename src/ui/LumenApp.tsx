@@ -17,6 +17,7 @@ import { ChatView } from './components/chat/ChatView';
 import { RelatedNotesView } from './components/related/RelatedNotesView';
 import { OnboardingView } from './components/onboarding/OnboardingView';
 import { ConflictBanner } from './components/ConflictBanner';
+import { SidebarHeader } from './components/SidebarHeader';
 
 /** Imperative API exposed via ref for keyboard shortcuts and commands. */
 export interface LumenAppHandle {
@@ -60,6 +61,7 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 		if (!configured) {
 			return (
 				<PluginProvider value={context}>
+					<SidebarHeader />
 					<OnboardingView />
 				</PluginProvider>
 			);
@@ -67,6 +69,7 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 
 		return (
 			<PluginProvider value={context}>
+				<SidebarHeader />
 				<ConflictBanner />
 				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
 				{activeMode === 'search' && <SearchView />}
