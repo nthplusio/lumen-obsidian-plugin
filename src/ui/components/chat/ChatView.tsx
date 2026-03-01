@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MarkdownRenderer, setIcon } from 'obsidian';
+import { MarkdownRenderer, Notice, setIcon } from 'obsidian';
 import type { ActiveToolUse, ChatMessage, ChatSource, ConversationSummary, ThinkingState } from '../../../types';
 import { usePlugin } from '../../contexts/PluginContext';
 import { useChat } from '../../hooks/useChat';
@@ -290,7 +290,7 @@ function ToolProgress({ tools, thinking }: { tools: ActiveToolUse[]; thinking: T
 function MessageBubble({ message, children }: { message: ChatMessage; children?: React.ReactNode }) {
 	return (
 		<div className={`lumen-chat-message lumen-chat-message-${message.role}`}>
-			<MessageHeader role={message.role} />
+			<MessageHeader role={message.role} content={message.content} />
 			<MessageContent message={message} />
 			{message.sources && message.sources.length > 0 && (
 				<div className="lumen-chat-sources">
@@ -303,7 +303,7 @@ function MessageBubble({ message, children }: { message: ChatMessage; children?:
 	);
 }
 
-function MessageHeader({ role }: { role: 'user' | 'assistant' }) {
+function MessageHeader({ role, content }: { role: 'user' | 'assistant'; content?: string }) {
 	const iconRef = useRef<HTMLSpanElement>(null);
 
 	useEffect(() => {
@@ -314,7 +314,34 @@ function MessageHeader({ role }: { role: 'user' | 'assistant' }) {
 		<div className="lumen-chat-message-header">
 			<span className="lumen-chat-message-icon" ref={iconRef} />
 			<span className="lumen-chat-message-role">{role === 'user' ? 'You' : 'Lumen'}</span>
+			{role === 'assistant' && content && <CopyButton content={content} />}
 		</div>
+	);
+}
+
+function CopyButton({ content }: { content: string }) {
+	const btnRef = useRef<HTMLButtonElement>(null);
+	const [copied, setCopied] = useState(false);
+
+	useEffect(() => {
+		if (btnRef.current) setIcon(btnRef.current, copied ? 'check' : 'copy');
+	}, [copied]);
+
+	const handleCopy = useCallback(() => {
+		navigator.clipboard.writeText(content).then(() => {
+			setCopied(true);
+			new Notice('Copied to clipboard');
+			setTimeout(() => setCopied(false), 2000);
+		});
+	}, [content]);
+
+	return (
+		<button
+			ref={btnRef}
+			className={`lumen-chat-copy-btn ${copied ? 'is-copied' : ''}`}
+			onClick={handleCopy}
+			aria-label="Copy response"
+		/>
 	);
 }
 

@@ -759,6 +759,48 @@
 	letter-spacing: 0.04em;
 }
 
+/* Copy button — hover-revealed on desktop, always visible on mobile */
+.lumen-chat-copy-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-left: auto;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.lumen-chat-message:hover .lumen-chat-copy-btn {
+	opacity: 1;
+}
+
+.lumen-chat-copy-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.lumen-chat-copy-btn.is-copied {
+	opacity: 1;
+	color: var(--text-success);
+}
+
+.lumen-chat-copy-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* On mobile, always show copy button (no hover) */
+.is-mobile .lumen-chat-copy-btn {
+	opacity: 0.6;
+}
+
 .lumen-chat-message-content {
 	font-size: var(--font-ui-small);
 	line-height: 1.6;
