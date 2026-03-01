@@ -196,6 +196,7 @@ function createSettings(overrides: Partial<LumenSettings> = {}): LumenSettings {
 
 function createMockPlugin(settingsOverrides: Partial<LumenSettings> = {}) {
 	return {
+		manifest: { version: '1.0.0' },
 		settings: createSettings(settingsOverrides),
 		saveSettings: vi.fn().mockResolvedValue(undefined),
 		triggerSync: vi.fn().mockResolvedValue(undefined),
@@ -278,10 +279,15 @@ describe('LumenSettingTab', () => {
 	// -------------------------------------------------------------------
 
 	describe('section rendering', () => {
-		it('renders heading', () => {
-			const h2 = containerEl.children.find((c: any) => c.tagName === 'H2');
+		it('renders heading with version badge', () => {
+			const titleRow = containerEl.children.find((c: any) => c.className === 'lumen-settings-title-row');
+			expect(titleRow).toBeDefined();
+			const h2 = titleRow.children.find((c: any) => c.tagName === 'H2');
 			expect(h2).toBeDefined();
 			expect(h2.textContent).toBe('Lumen Settings');
+			const version = titleRow.children.find((c: any) => c.className === 'lumen-settings-version');
+			expect(version).toBeDefined();
+			expect(version.textContent).toBe('v1.0.0');
 		});
 
 		it('renders 3 section headers', () => {

@@ -31,7 +31,12 @@ export class LumenSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Lumen Settings' });
+		const titleRow = containerEl.createEl('div', { cls: 'lumen-settings-title-row' });
+		titleRow.createEl('h2', { text: 'Lumen Settings' });
+		titleRow.createEl('span', {
+			text: `v${this.plugin.manifest.version}`,
+			cls: 'lumen-settings-version',
+		});
 
 		const subtitleRow = containerEl.createEl('div', { cls: 'lumen-settings-subtitle-row' });
 		subtitleRow.createEl('span', {

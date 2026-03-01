@@ -4,6 +4,19 @@
    Settings Tab
    ============================================ */
 
+/* Settings title row with version badge */
+.lumen-settings-title-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.lumen-settings-version {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
 /* Settings subtitle row with docs button */
 .lumen-settings-subtitle-row {
 	display: flex;
