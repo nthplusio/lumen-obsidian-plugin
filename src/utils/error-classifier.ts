@@ -22,6 +22,24 @@ export interface ClassifiedError {
 // Status code classification (takes priority over message matching)
 // ---------------------------------------------------------------------------
 
+/**
+ * Extract the server's error detail from an error message like:
+ *   "V2 manifest exchange failed: 400 Some server error detail"
+ *
+ * Returns the server detail if present and non-empty, otherwise null.
+ * This preserves diagnostic information that would otherwise be lost
+ * when the classifier replaces it with a generic message.
+ */
+function extractServerDetail(msg: string): string | null {
+	// Match "failed: <status> <detail>" pattern from SyncClient error messages
+	const match = msg.match(/failed:\s*\d{3}\s+(.+)/);
+	if (match?.[1] && match[1].trim().length > 0) {
+		return match[1].trim();
+	}
+	// Also check for serverMessage property content embedded in the message
+	return null;
+}
+
 function classifyByStatusCode(status: number, msg: string): ClassifiedError | null {
 	switch (status) {
 		case 400:
@@ -35,7 +53,7 @@ function classifyByStatusCode(status: number, msg: string): ClassifiedError | nu
 			}
 			return {
 				category: 'validation',
-				message: 'Invalid request. Check your data and try again.',
+				message: extractServerDetail(msg) ?? 'Invalid request. Check your data and try again.',
 				retryable: false,
 				statusCode: 400,
 			};
@@ -128,7 +146,7 @@ function classifyByMessage(msg: string): ClassifiedError {
 	if (msg.includes('400') || msg.includes('Bad Request') || msg.includes('VALIDATION_ERROR')) {
 		return {
 			category: 'validation',
-			message: 'Invalid request. Check your data and try again.',
+			message: extractServerDetail(msg) ?? 'Invalid request. Check your data and try again.',
 			retryable: false,
 			statusCode: 400,
 		};

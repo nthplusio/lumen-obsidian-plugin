@@ -231,11 +231,12 @@ export class SyncClient extends LumenHttpClient {
 
 		const url = this.buildUrl('sync/manifest');
 
-		logger.debug('Sending V2 manifest:', {
+		logger.info('Sending V2 manifest:', {
 			fileCount: files.length,
 			deviceId,
 			lastSyncSeq,
 			hasCursor: !!cursor,
+			cursorPreview: cursor ? `${cursor.slice(0, 20)}…` : '(none)',
 		});
 
 		const body: Record<string, unknown> = {
@@ -256,10 +257,25 @@ export class SyncClient extends LumenHttpClient {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
+			const serverMsg = this.extractErrorMessage(response);
+			// Log full response detail — critical for diagnosing proxy/WAF blocks
+			logger.error(`V2 manifest failed (${response.status}):`, serverMsg || '(no body)');
+			logger.error('Manifest request context:', {
+				fileCount: files.length,
+				deviceId,
+				lastSyncSeq,
+				hasCursor: !!cursor,
+				bodyBytes: JSON.stringify(body).length,
+			});
+			// Log raw response text for cases where JSON parsing fails (e.g. Cloudflare HTML)
+			if (response.text && !serverMsg) {
+				logger.error('Raw response:', response.text.slice(0, 500));
+			}
 			const error = new Error(
-				`V2 manifest exchange failed: ${response.status} ${this.extractErrorMessage(response)}`,
+				`V2 manifest exchange failed: ${response.status} ${serverMsg}`,
 			);
 			(error as Error & { status: number }).status = response.status;
+			(error as Error & { serverMessage?: string }).serverMessage = serverMsg;
 			throw error;
 		}
 
