@@ -55,18 +55,20 @@ Then verify all three files have the correct version:
 - `manifest.json` — `"version": "<new>"`
 - `versions.json` — has entry for `"<new>"`
 
-## Step 5: Rebuild
+## Step 5: Verify build
 
-Run `npm run build` to regenerate `main.js` with the new version context. This is required because `main.js` is a committed release asset.
+Run `npm run build` to verify type-checking passes and the build succeeds. This is a local sanity check only — `main.js` is gitignored and built fresh by the release workflow in CI.
 
 ## Step 6: Commit version bump
 
 ```bash
-git add package.json manifest.json versions.json main.js
+git add package.json manifest.json versions.json
 git commit -m "Release <new-version>"
 ```
 
 Do NOT add `Co-Authored-By` to the release commit — keep it clean for `--generate-notes`.
+
+Do NOT stage `main.js` — it is gitignored. The release workflow builds it from source.
 
 ## Step 7: Tag and push
 
@@ -75,7 +77,11 @@ git tag <new-version>
 git push && git push --tags
 ```
 
-The tag push triggers the `release.yml` workflow which creates the GitHub Release with `main.js`, `manifest.json`, and `styles.css` as assets.
+The tag push triggers `.github/workflows/release.yml` which:
+1. Checks out the tagged commit
+2. Runs `npm ci`, `npm run test:run`, `npm run build`
+3. Creates a GitHub Release via `gh release create` with `main.js`, `manifest.json`, and `styles.css` as assets
+4. Release notes are auto-generated from commits via `--generate-notes`
 
 ## Step 8: Confirm
 

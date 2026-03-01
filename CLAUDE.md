@@ -72,7 +72,7 @@ Key components:
 
 ## Build System
 
-esbuild bundles `src/main.ts` → `main.js` (CJS format, ES2018 target). The `obsidian` module and all CodeMirror/Lezer packages are externalized — they're provided by the Obsidian runtime. The output `main.js` is committed to the repo (required for Obsidian community plugin distribution).
+esbuild bundles `src/main.ts` → `main.js` (CJS format, ES2018 target). The `obsidian` module and all CodeMirror/Lezer packages are externalized — they're provided by the Obsidian runtime. `main.js` is gitignored — the release workflow (`.github/workflows/release.yml`) builds it from source and attaches it as a GitHub Release asset.
 
 ## Testing
 
@@ -81,7 +81,7 @@ Vitest with the `obsidian` module aliased to `tests/__mocks__/obsidian.ts` (mini
 ## Gotchas
 
 - **`requestUrl` vs `fetch`**: `requestUrl` handles CORS in Electron but can't serialize FormData. File uploads must use native `fetch`. Never switch upload code to `requestUrl`.
-- **`main.js` is committed**: The built output is checked into git because Obsidian community plugins require it. Rebuild before committing changes.
+- **`main.js` is NOT committed**: It's gitignored. The release workflow builds it from source and attaches it as a release asset. Run `npm run build` locally only for verification.
 - **Sync requires both `apiKey` and `workspaceId`**: `isSyncConfigured()` gates on both. Workspace ID is auto-resolved from the API key on first connection.
 - **Exclude pattern matching**: Both `FileHasher` and `SyncManager` delegate to `isExcludedByPatterns()` in `src/utils/exclude-pattern.ts`. Update the shared function, not the callers.
 - **Settings persistence split**: `SyncManager` updates `settings.lastSyncCursor` and `settings.lastSyncAt` in-memory only. The caller (`main.ts`) must call `saveSettings()` after sync.
