@@ -3742,41 +3742,6 @@
 }
 
 /* ============================================
-   Compact mode (mobile merged header + tabs)
-   ============================================ */
-
-/* Compact sidebar header — tighter padding, flex row */
-.lumen-sidebar-header-compact {
-	padding: 4px 8px;
-	gap: 4px;
-}
-
-/* Compact tab bar — inline icon-only tabs, no background box */
-.lumen-tab-bar-compact {
-	display: flex;
-	gap: 2px;
-	padding: 0;
-	flex: 1;
-	border-bottom: none;
-	background: transparent;
-}
-
-.lumen-tab-bar-compact .lumen-tab {
-	flex: 0 0 auto;
-	padding: 4px 8px;
-	gap: 0;
-}
-
-.lumen-tab-bar-compact .lumen-tab-label {
-	display: none;
-}
-
-.lumen-tab-bar-compact .lumen-tab-active {
-	background: transparent;
-	box-shadow: none;
-}
-
-/* ============================================
    Sync status strip (in-sidebar)
    ============================================ */
 

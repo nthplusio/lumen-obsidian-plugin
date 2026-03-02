@@ -4,9 +4,8 @@
  * Shows OnboardingView when no API key is configured.
  * Otherwise renders TabBar + the active view (SearchView or ChatView).
  *
- * On mobile, merges the sidebar header and tab bar into a single
- * compact row and shows the sync status strip (since the Obsidian
- * status bar is hidden on mobile).
+ * The sync status strip is rendered in the center of the header,
+ * replacing the "Lumen" title text when present.
  *
  * Exposes an imperative API via ref for command-driven actions
  * (focus search, switch tabs, new chat).
@@ -63,7 +62,6 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 			setActiveMode(mode);
 		}, []);
 
-		const { isMobile } = context;
 		const showSyncStrip = !!context.plugin.syncManager;
 
 		if (!configured) {
@@ -79,18 +77,8 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 
 		return (
 			<PluginProvider value={context}>
-				{isMobile ? (
-					/* Mobile: merged header + icon-only tabs in one row */
-					<SidebarHeader compact syncStrip={syncStrip}>
-						<TabBar compact activeMode={activeMode} onModeChange={handleModeChange} />
-					</SidebarHeader>
-				) : (
-					/* Desktop: separate header and tab bar rows */
-					<>
-						<SidebarHeader syncStrip={syncStrip} />
-						<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
-					</>
-				)}
+				<SidebarHeader syncStrip={syncStrip} />
+				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
 				<ConflictBanner />
 				{activeMode === 'search' && <SearchView />}
 				{activeMode === 'chat' && <ChatView />}

@@ -3,8 +3,6 @@
  *
  * Renders tab buttons with Obsidian icons. Uses setIcon via useEffect+ref
  * to render SVG icons from Obsidian's icon set.
- *
- * In compact mode (mobile), renders icon-only tabs without labels or background.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -15,10 +13,9 @@ export type ViewMode = 'search' | 'chat' | 'related';
 interface TabBarProps {
 	activeMode: ViewMode;
 	onModeChange: (mode: ViewMode) => void;
-	compact?: boolean;
 }
 
-export function TabBar({ activeMode, onModeChange, compact }: TabBarProps) {
+export function TabBar({ activeMode, onModeChange }: TabBarProps) {
 	const searchIconRef = useRef<HTMLSpanElement>(null);
 	const chatIconRef = useRef<HTMLSpanElement>(null);
 	const relatedIconRef = useRef<HTMLSpanElement>(null);
@@ -33,12 +30,8 @@ export function TabBar({ activeMode, onModeChange, compact }: TabBarProps) {
 	const handleChatClick = useCallback(() => onModeChange('chat'), [onModeChange]);
 	const handleRelatedClick = useCallback(() => onModeChange('related'), [onModeChange]);
 
-	const className = compact
-		? 'lumen-tab-bar lumen-tab-bar-compact'
-		: 'lumen-tab-bar';
-
 	return (
-		<div className={className}>
+		<div className="lumen-tab-bar">
 			<button
 				className={`lumen-tab ${activeMode === 'search' ? 'lumen-tab-active' : ''}`}
 				data-mode="search"
