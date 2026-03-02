@@ -47,7 +47,7 @@ type ChatAction =
 	| { type: 'ADD_USER_MESSAGE'; content: string }
 	| { type: 'START_STREAMING' }
 	| { type: 'STREAM_TOKEN'; content: string }
-	| { type: 'FINISH_STREAMING'; content: string; sources: ChatSource[]; turnsInfo?: TurnsInfo }
+	| { type: 'FINISH_STREAMING'; content: string; sources: ChatSource[]; turnsInfo?: TurnsInfo; tokenUsage?: { input: number; output: number } }
 	| { type: 'STREAM_CANCELLED'; partialContent: string }
 	| { type: 'SET_ERROR'; error: string }
 	| { type: 'SET_UPGRADE_MESSAGE'; message: string }
@@ -106,6 +106,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 				role: 'assistant',
 				content: action.content,
 				sources: action.sources,
+				tokenUsage: action.tokenUsage,
 			};
 			return {
 				...state,
@@ -306,6 +307,7 @@ export function useChat(): UseChatReturn {
 				turnsInfo: response.metadata && deepResearchRef.current
 					? { turnsUsed: response.metadata.turnsUsed, turnsRemaining: response.metadata.turnsRemaining }
 					: undefined,
+				tokenUsage: response.metadata?.tokenUsage,
 			});
 		} catch (err) {
 			if (err instanceof Error && err.name === 'AbortError') {

@@ -290,7 +290,7 @@ function ToolProgress({ tools, thinking }: { tools: ActiveToolUse[]; thinking: T
 function MessageBubble({ message, children }: { message: ChatMessage; children?: React.ReactNode }) {
 	return (
 		<div className={`lumen-chat-message lumen-chat-message-${message.role}`}>
-			<MessageHeader role={message.role} content={message.content} />
+			<MessageHeader role={message.role} />
 			<MessageContent message={message} />
 			{message.sources && message.sources.length > 0 && (
 				<div className="lumen-chat-sources">
@@ -298,12 +298,15 @@ function MessageBubble({ message, children }: { message: ChatMessage; children?:
 					<SourceChips sources={message.sources} />
 				</div>
 			)}
+			{message.role === 'assistant' && (
+				<MessageFooter content={message.content} tokenUsage={message.tokenUsage} />
+			)}
 			{children}
 		</div>
 	);
 }
 
-function MessageHeader({ role, content }: { role: 'user' | 'assistant'; content?: string }) {
+function MessageHeader({ role }: { role: 'user' | 'assistant' }) {
 	const iconRef = useRef<HTMLSpanElement>(null);
 
 	useEffect(() => {
@@ -314,7 +317,6 @@ function MessageHeader({ role, content }: { role: 'user' | 'assistant'; content?
 		<div className="lumen-chat-message-header">
 			<span className="lumen-chat-message-icon" ref={iconRef} />
 			<span className="lumen-chat-message-role">{role === 'user' ? 'You' : 'Lumen'}</span>
-			{role === 'assistant' && content && <CopyButton content={content} />}
 		</div>
 	);
 }
@@ -342,6 +344,19 @@ function CopyButton({ content }: { content: string }) {
 			onClick={handleCopy}
 			aria-label="Copy response"
 		/>
+	);
+}
+
+function MessageFooter({ content, tokenUsage }: { content: string; tokenUsage?: { input: number; output: number } }) {
+	return (
+		<div className="lumen-chat-message-footer">
+			<CopyButton content={content} />
+			{tokenUsage && (
+				<span className="lumen-chat-token-count">
+					{tokenUsage.input} in &middot; {tokenUsage.output} out
+				</span>
+			)}
+		</div>
 	);
 }
 
@@ -549,25 +564,29 @@ function ChatInputArea({
 					onChange={handleInput}
 					onKeyDown={handleKeyDown}
 				/>
-				{activeNotePath && (
-					<button
-						className={`lumen-chat-note-context-toggle ${activeNoteContextEnabled ? 'is-active' : ''}`}
-						aria-label={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
-						aria-pressed={activeNoteContextEnabled}
-						onClick={onToggleActiveNoteContext}
-						ref={noteIconRef}
-						title={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
-					/>
-				)}
-				{canDeepResearch && (
-					<button
-						className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
-						aria-label="Toggle Deep Research"
-						aria-pressed={deepResearchEnabled}
-						onClick={onToggleDeepResearch}
-						ref={sparklesRef}
-					/>
-				)}
+			</div>
+			<div className="lumen-chat-button-row">
+				<div className="lumen-chat-button-group-left">
+					{activeNotePath && (
+						<button
+							className={`lumen-chat-note-context-toggle ${activeNoteContextEnabled ? 'is-active' : ''}`}
+							aria-label={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
+							aria-pressed={activeNoteContextEnabled}
+							onClick={onToggleActiveNoteContext}
+							ref={noteIconRef}
+							title={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
+						/>
+					)}
+					{canDeepResearch && (
+						<button
+							className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
+							aria-label="Toggle Deep Research"
+							aria-pressed={deepResearchEnabled}
+							onClick={onToggleDeepResearch}
+							ref={sparklesRef}
+						/>
+					)}
+				</div>
 				{!isBusy ? (
 					<button
 						className="lumen-chat-send-button"

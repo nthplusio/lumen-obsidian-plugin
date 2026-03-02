@@ -465,11 +465,24 @@
 .lumen-chat-input-row {
 	display: flex;
 	align-items: flex-end;
-	gap: 8px;
+}
+
+.lumen-chat-button-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 6px;
+}
+
+.lumen-chat-button-group-left {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 
 .lumen-chat-input {
-	flex: 1;
+	width: 100%;
+	box-sizing: border-box;
 	resize: none;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 10px;
@@ -722,9 +735,8 @@
 
 .lumen-chat-message-assistant {
 	background: var(--background-secondary);
-	margin-right: 32px;
-	border-bottom-left-radius: 4px;
-	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
 .lumen-chat-message-error {
@@ -795,6 +807,36 @@
 .lumen-chat-copy-btn svg {
 	width: 14px;
 	height: 14px;
+}
+
+/* Message footer — copy button + token count */
+.lumen-chat-message-footer {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+	opacity: 0;
+	transition: opacity 150ms ease;
+}
+
+.lumen-chat-message:hover .lumen-chat-message-footer {
+	opacity: 1;
+}
+
+.lumen-chat-message-footer .lumen-chat-copy-btn {
+	opacity: 1;
+}
+
+.lumen-chat-token-count {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+/* On mobile, always show footer (no hover) */
+.is-mobile .lumen-chat-message-footer {
+	opacity: 1;
 }
 
 /* On mobile, always show copy button (no hover) */
@@ -3789,10 +3831,16 @@
 	padding: 10px 14px;
 }
 
-/* Bigger send / stop / deep-research buttons on mobile */
+/* Tighter input area on mobile — reduces gap between keyboard and input */
+.is-mobile .lumen-chat-input-area {
+	padding: 6px;
+}
+
+/* Bigger send / stop / deep-research / context buttons on mobile */
 .is-mobile .lumen-chat-send-button,
 .is-mobile .lumen-chat-stop-button,
-.is-mobile .lumen-chat-deep-research-toggle {
+.is-mobile .lumen-chat-deep-research-toggle,
+.is-mobile .lumen-chat-note-context-toggle {
 	width: 44px;
 	height: 44px;
 }

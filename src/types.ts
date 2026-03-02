@@ -209,6 +209,7 @@ export interface ChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
 	sources?: Array<string | ChatSource>;
+	tokenUsage?: { input: number; output: number };
 }
 
 /** A source with path and relevance score */
