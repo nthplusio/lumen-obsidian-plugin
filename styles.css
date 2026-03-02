@@ -1,5 +1,12 @@
 /* Lumen Search plugin styles */
 
+/* Brand token — matches the golden yellow in the Lumen icon (#fccd41) */
+:root {
+	--lumen-brand: #fccd41;
+	--lumen-brand-hover: #fbd420;
+	--lumen-brand-text: #000;
+}
+
 /* ============================================
    Settings Tab
    ============================================ */
@@ -172,9 +179,9 @@
 
 .lumen-tab.lumen-tab-active,
 .lumen-tab.lumen-tab-active:hover {
-	color: var(--text-accent);
+	color: var(--lumen-brand);
 	background: var(--background-modifier-hover);
-	box-shadow: inset 0 -2px 0 var(--text-accent);
+	box-shadow: inset 0 -2px 0 var(--lumen-brand);
 }
 
 .lumen-tab-icon {
@@ -499,8 +506,8 @@
 }
 
 .lumen-chat-input:focus {
-	border-color: var(--interactive-accent);
-	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 124, 77, 255), 0.12);
+	border-color: var(--lumen-brand);
+	box-shadow: 0 0 0 2px rgba(252, 205, 65, 0.18);
 }
 
 .lumen-chat-input::placeholder {
@@ -517,14 +524,14 @@
 	justify-content: center;
 	border: none;
 	border-radius: 10px;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: var(--lumen-brand);
+	color: var(--lumen-brand-text);
 	cursor: pointer;
 	transition: all 150ms ease;
 }
 
 .lumen-chat-send-button:hover {
-	background: var(--interactive-accent-hover);
+	background: var(--lumen-brand-hover);
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
