@@ -63,10 +63,10 @@ export class LumenSettingTab extends PluginSettingTab {
 	private renderConnectionSection(containerEl: HTMLElement): void {
 		const content = this.createSection(containerEl, 'Connection', true);
 
-		// --- Server URL (read-only label) ---
+		// --- Server URL (effective, read-only) ---
 		new Setting(content)
 			.setName('Server')
-			.setDesc(LUMEN_API_URL);
+			.setDesc(this.plugin.settings.serverUrl || LUMEN_API_URL);
 
 		// --- API Key ---
 		const keySetting = new Setting(content)
@@ -236,6 +236,20 @@ export class LumenSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						this.display();
 						new Notice('Device reset. Workspace ID will be re-resolved from API key on next load.');
+					});
+			});
+
+		// Server URL override
+		new Setting(content)
+			.setName('Server URL')
+			.setDesc('Override the default server URL. Leave empty to use the production server.')
+			.addText(text => {
+				text
+					.setPlaceholder(LUMEN_API_URL)
+					.setValue(this.plugin.settings.serverUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.serverUrl = value.trim();
+						await this.plugin.saveSettings();
 					});
 			});
 

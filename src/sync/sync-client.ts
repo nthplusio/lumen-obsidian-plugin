@@ -33,15 +33,16 @@ import { logger } from '../utils/logger';
 export class SyncClient extends LumenHttpClient {
 	private workspaceId: string;
 
-	constructor(apiKey: string, workspaceId: string) {
-		super(apiKey);
+	constructor(apiKey: string, workspaceId: string, serverUrl = '') {
+		super(apiKey, serverUrl);
 		this.workspaceId = workspaceId;
 	}
 
 	/** Swap credentials (e.g. after a settings change). */
-	updateSettings(apiKey: string, workspaceId: string): void {
+	updateSettings(apiKey: string, workspaceId: string, serverUrl = ''): void {
 		this.apiKey = apiKey;
 		this.workspaceId = workspaceId;
+		this.serverUrl = serverUrl;
 	}
 
 	// -----------------------------------------------------------------------

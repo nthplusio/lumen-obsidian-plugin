@@ -168,7 +168,7 @@ export default class LumenPlugin extends Plugin {
 		logger.setDebugMode(this.settings.debugMode);
 
 		// Initialize API client with saved API key
-		this.apiClient = new ApiClient(this.settings.apiKey);
+		this.apiClient = new ApiClient(this.settings.apiKey, this.settings.serverUrl);
 
 		// Expose public JS API for Dataview integration
 		this.api = createLumenAPI(this.apiClient);
@@ -191,6 +191,7 @@ export default class LumenPlugin extends Plugin {
 			this.chatClient = new ChatClient(
 				this.settings.apiKey,
 				this.settings.workspaceId,
+				this.settings.serverUrl,
 			);
 			// Pre-cache plan info (non-blocking)
 			this.chatClient.getWorkspacePlan().catch(() => {});
@@ -396,7 +397,7 @@ export default class LumenPlugin extends Plugin {
 		this.notifySettingsListeners();
 
 		// Keep API client in sync with settings
-		this.apiClient.updateSettings(this.settings.apiKey);
+		this.apiClient.updateSettings(this.settings.apiKey, this.settings.serverUrl);
 
 		// Keep logger debug mode in sync
 		logger.setDebugMode(this.settings.debugMode);
@@ -406,12 +407,14 @@ export default class LumenPlugin extends Plugin {
 			this.chatClient.updateSettings(
 				this.settings.apiKey,
 				this.settings.workspaceId,
+				this.settings.serverUrl,
 			);
 		} else if (this.settings.apiKey && this.settings.workspaceId) {
 			// Create ChatClient if now configured
 			this.chatClient = new ChatClient(
 				this.settings.apiKey,
 				this.settings.workspaceId,
+				this.settings.serverUrl,
 			);
 		}
 
@@ -420,6 +423,7 @@ export default class LumenPlugin extends Plugin {
 			this.syncClient.updateSettings(
 				this.settings.apiKey,
 				this.settings.workspaceId,
+				this.settings.serverUrl,
 			);
 		}
 
@@ -445,6 +449,7 @@ export default class LumenPlugin extends Plugin {
 		this.syncClient = new SyncClient(
 			this.settings.apiKey,
 			this.settings.workspaceId,
+			this.settings.serverUrl,
 		);
 		this.conflictLogger = new ConflictLogger(this.app.vault);
 		this.syncManager = new SyncManager(

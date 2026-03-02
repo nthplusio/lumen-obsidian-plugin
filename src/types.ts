@@ -9,7 +9,7 @@
 // Plugin Constants
 // ============================================================================
 
-/** Production API URL — baked in, not user-configurable */
+/** Production API URL — used when no custom server URL is configured */
 export const LUMEN_API_URL = 'https://app.getlumen.io';
 
 // ============================================================================
@@ -25,6 +25,7 @@ export interface LumenSettings {
 	lastSyncSeq: number;
 	lastSyncAt: string;
 	debugMode: boolean;
+	serverUrl: string;
 }
 
 export const DEFAULT_SETTINGS: LumenSettings = {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: LumenSettings = {
 	lastSyncSeq: 0,
 	lastSyncAt: '',
 	debugMode: false,
+	serverUrl: '',
 };
 
 // ============================================================================

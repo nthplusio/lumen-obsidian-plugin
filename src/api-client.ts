@@ -12,16 +12,18 @@ import { LumenHttpClient } from './http-client';
 /**
  * REST API client bound to an API key.
  *
- * The server URL is baked in (LUMEN_API_URL). Only the API key is configurable.
+ * The server URL defaults to LUMEN_API_URL but can be overridden
+ * for staging/dev environments.
  */
 export class ApiClient extends LumenHttpClient {
-	constructor(apiKey: string) {
-		super(apiKey);
+	constructor(apiKey: string, serverUrl = '') {
+		super(apiKey, serverUrl);
 	}
 
-	/** Update API key (e.g., after settings change) */
-	updateSettings(apiKey: string): void {
+	/** Update settings (e.g., after settings change) */
+	updateSettings(apiKey: string, serverUrl = ''): void {
 		this.apiKey = apiKey;
+		this.serverUrl = serverUrl;
 	}
 
 	/** Test connectivity by calling GET /health */
