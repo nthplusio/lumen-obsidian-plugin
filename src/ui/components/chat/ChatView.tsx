@@ -351,7 +351,7 @@ function MessageFooter({ content, tokenUsage }: { content: string; tokenUsage?: 
 	return (
 		<div className="lumen-chat-message-footer">
 			<CopyButton content={content} />
-			{tokenUsage && (
+			{tokenUsage && (tokenUsage.input > 0 || tokenUsage.output > 0) && (
 				<span className="lumen-chat-token-count">
 					{tokenUsage.input} in &middot; {tokenUsage.output} out
 				</span>
@@ -499,8 +499,10 @@ function ChatInputArea({
 	onToggleActiveNoteContext,
 	onDismissRateLimit,
 }: ChatInputAreaProps) {
+	const { isMobile } = usePlugin();
 	const [input, setInput] = useState('');
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const inputAreaRef = useRef<HTMLDivElement>(null);
 	const sendIconRef = useRef<HTMLButtonElement>(null);
 	const stopIconRef = useRef<HTMLButtonElement>(null);
 	const sparklesRef = useRef<HTMLButtonElement>(null);
@@ -543,11 +545,21 @@ function ChatInputArea({
 		if (noteIconRef.current) setIcon(noteIconRef.current, 'file-text');
 	}, [activeNotePath]);
 
+	// On mobile, scroll the input area into view when the keyboard opens.
+	// The 300ms delay lets the keyboard finish animating so the browser
+	// knows the final viewport size before we scroll.
+	const handleFocus = useCallback(() => {
+		if (!isMobile || !inputAreaRef.current) return;
+		setTimeout(() => {
+			inputAreaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+		}, 300);
+	}, [isMobile]);
+
 	const isBusy = status !== 'idle';
 	const activeFileName = activeNotePath?.split('/').pop()?.replace(/\.md$/, '') ?? null;
 
 	return (
-		<div className="lumen-chat-input-area">
+		<div className="lumen-chat-input-area" ref={inputAreaRef}>
 			{rateLimitResetsAt && (
 				<RateLimitBanner resetsAt={rateLimitResetsAt} onDismiss={onDismissRateLimit} />
 			)}
@@ -563,6 +575,7 @@ function ChatInputArea({
 					value={input}
 					onChange={handleInput}
 					onKeyDown={handleKeyDown}
+					onFocus={handleFocus}
 				/>
 			</div>
 			<div className="lumen-chat-button-row">

@@ -270,7 +270,7 @@ export interface SendMessageRequest {
 /** Metadata from lumen_metadata SSE event */
 export interface StreamMetadata {
 	sources: ChatSource[];
-	tokenUsage: { input: number; output: number };
+	tokenUsage?: { input: number; output: number };
 	turnsUsed: number;
 	turnsRemaining: number;
 }

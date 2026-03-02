@@ -140,10 +140,9 @@ export function parseConversationSSE(buffer: string): ConversationSSEResult {
 				const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
 				metadata = {
 					sources,
-					tokenUsage: {
-						input: (tokenUsage?.['input'] as number) ?? 0,
-						output: (tokenUsage?.['output'] as number) ?? 0,
-					},
+					tokenUsage: tokenUsage
+						? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+						: undefined,
 					turnsUsed: (data['turns_used'] as number) ?? 0,
 					turnsRemaining: (data['turns_remaining'] as number) ?? 0,
 				};
@@ -279,10 +278,9 @@ export class SSEStreamParser {
 					const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
 					event.metadata = {
 						sources: event.sources ?? [],
-						tokenUsage: {
-							input: (tokenUsage?.['input'] as number) ?? 0,
-							output: (tokenUsage?.['output'] as number) ?? 0,
-						},
+						tokenUsage: tokenUsage
+							? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+							: undefined,
 						turnsUsed: (data['turns_used'] as number) ?? 0,
 						turnsRemaining: (data['turns_remaining'] as number) ?? 0,
 					};

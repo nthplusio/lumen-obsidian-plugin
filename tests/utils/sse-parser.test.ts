@@ -318,7 +318,7 @@ describe('parseConversationSSE', () => {
 
 		expect(result.metadata).toEqual({
 			sources: [],
-			tokenUsage: { input: 0, output: 0 },
+			tokenUsage: undefined,
 			turnsUsed: 0,
 			turnsRemaining: 0,
 		});
