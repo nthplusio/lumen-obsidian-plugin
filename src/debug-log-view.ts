@@ -205,8 +205,41 @@ export class LumenDebugLogView extends ItemView {
 			cls: `lumen-debug-badge lumen-debug-badge-${entry.level}`,
 		});
 
-		// Message
-		row.createSpan({ text: entry.message, cls: 'lumen-debug-msg' });
+		// Message — parse [[vault-links]] into clickable elements
+		const msgEl = row.createSpan({ cls: 'lumen-debug-msg' });
+		this.renderMessageWithLinks(msgEl, entry.message);
+	}
+
+	/**
+	 * Parse [[wiki-link]] syntax in log messages into clickable vault links.
+	 * Plain text segments are rendered as-is; [[path]] segments become
+	 * clickable spans that open the file via workspace.openLinkText().
+	 */
+	private renderMessageWithLinks(container: HTMLElement, message: string): void {
+		const linkPattern = /\[\[([^\]]+)\]\]/g;
+		let lastIndex = 0;
+		let match: RegExpExecArray | null;
+
+		while ((match = linkPattern.exec(message)) !== null) {
+			// Text before the link
+			if (match.index > lastIndex) {
+				container.appendText(message.slice(lastIndex, match.index));
+			}
+
+			// Clickable vault link
+			const vaultPath = match[1]!;
+			const link = container.createSpan({ cls: 'lumen-debug-vault-link', text: vaultPath });
+			link.addEventListener('click', () => {
+				void this.app.workspace.openLinkText(vaultPath, '');
+			});
+
+			lastIndex = match.index + match[0].length;
+		}
+
+		// Remaining text after last link
+		if (lastIndex < message.length) {
+			container.appendText(message.slice(lastIndex));
+		}
 	}
 
 	// -----------------------------------------------------------------------

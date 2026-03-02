@@ -2264,6 +2264,19 @@
 	white-space: pre-wrap;
 }
 
+/* Clickable vault link inside log messages */
+.lumen-debug-vault-link {
+	color: var(--text-accent);
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-style: dotted;
+	text-underline-offset: 2px;
+}
+
+.lumen-debug-vault-link:hover {
+	text-decoration-style: solid;
+}
+
 /* ============================================
    Help / Documentation Modal
    ============================================ */

@@ -53,6 +53,7 @@ interface MockElement {
 	createDiv: (opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => MockElement;
 	createEl: (tag: string, opts?: { cls?: string; text?: string; value?: string; attr?: Record<string, string> }) => MockElement;
 	createSpan: (opts?: { cls?: string; text?: string }) => MockElement;
+	appendText: (text: string) => void;
 	empty: () => void;
 	addClass: (...cls: string[]) => void;
 	addEventListener: (event: string, handler: Function) => void;
@@ -121,6 +122,10 @@ function createMockElement(tag = 'div'): MockElement {
 
 		createSpan(opts = {}) {
 			return el.createEl('span', opts);
+		},
+
+		appendText(text: string) {
+			el.textContent = (el.textContent ?? '') + text;
 		},
 
 		empty() {

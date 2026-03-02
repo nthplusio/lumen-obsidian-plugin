@@ -477,13 +477,14 @@ export class SyncManager {
 			`Server requests ${manifestResponse.needed_files.length} upload(s), ${serverChanges.length} download(s)`,
 		);
 
-		// Summarize manifest rejections grouped by extension (avoid noisy per-file logs)
+		// Summarize manifest rejections grouped by extension, with per-file detail at debug level
 		const manifestRejected = manifestResponse.rejected_files ?? [];
 		if (manifestRejected.length > 0) {
 			const extCounts = new Map<string, number>();
 			for (const r of manifestRejected) {
 				const ext = r.path.includes('.') ? `.${r.path.split('.').pop()!.toLowerCase()}` : '(no ext)';
 				extCounts.set(ext, (extCounts.get(ext) ?? 0) + 1);
+				logger.debug(`Skipped: [[${r.path}]] — ${r.reason ?? 'unsupported type'}`);
 			}
 			const breakdown = [...extCounts.entries()]
 				.sort((a, b) => b[1] - a[1])
@@ -533,7 +534,7 @@ export class SyncManager {
 				if (uploadResponse.rejected_files?.length) {
 					filesRejected += uploadResponse.rejected_files.length;
 					for (const rf of uploadResponse.rejected_files) {
-						logger.info(`Upload rejected: ${rf.path} — ${rf.reason}`);
+						logger.info(`Upload rejected: [[${rf.path}]] — ${rf.reason}`);
 						errors.push(`${rf.path}: ${rf.reason}`);
 					}
 				}
