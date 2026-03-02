@@ -3838,9 +3838,26 @@
 	padding: 10px 14px;
 }
 
+/*
+ * Kill Obsidian's default .view-content padding on mobile so the chat
+ * input sits flush against the keyboard. Without this, the view-content
+ * padding creates a large dead zone between the button row and the
+ * software keyboard.
+ */
+.is-mobile .workspace-leaf-content[data-type="lumen-main-view"] .view-content {
+	padding: 0;
+}
+
 /* Tighter input area on mobile — reduces gap between keyboard and input */
 .is-mobile .lumen-chat-input-area {
-	padding: 6px;
+	padding: 4px 6px;
+	/*
+	 * On iOS the safe-area-inset-bottom reserves space for the home
+	 * indicator. We add it as bottom padding so the buttons aren't
+	 * clipped when the keyboard is hidden. When the keyboard is open
+	 * the inset collapses to 0 automatically.
+	 */
+	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Bigger send / stop / deep-research / context buttons on mobile */
