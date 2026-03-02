@@ -258,6 +258,27 @@ describe('FileHasher', () => {
 			expect(result.has('drafts/ABC.md')).toBe(true);
 		});
 
+		it('excludes conflict files from hashing', async () => {
+			const files = [
+				createMockFile('notes/keep.md'),
+				createMockFile('notes/my-note.conflict.md'),
+				createMockFile('notes/my-note.conflict-1709049600.md'),
+				createMockFile('.lumen-conflicts.md'),
+				createMockFile('notes/also-keep.md'),
+			];
+			vault.getFiles.mockReturnValue(files);
+			vault.read.mockResolvedValue('content');
+
+			const result = await hasher.hashAllFiles();
+
+			expect(result.size).toBe(2);
+			expect(result.has('notes/keep.md')).toBe(true);
+			expect(result.has('notes/also-keep.md')).toBe(true);
+			expect(result.has('notes/my-note.conflict.md')).toBe(false);
+			expect(result.has('notes/my-note.conflict-1709049600.md')).toBe(false);
+			expect(result.has('.lumen-conflicts.md')).toBe(false);
+		});
+
 		it('reports progress via callback', async () => {
 			// Create 120 files to trigger multiple chunks (50 per chunk)
 			const files = Array.from({ length: 120 }, (_, i) =>

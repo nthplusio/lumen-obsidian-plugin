@@ -9,6 +9,18 @@
  */
 
 /**
+ * Check if a file is a Lumen conflict artifact that should never be synced.
+ *
+ * Matches:
+ *   - `*.conflict.md` / `*.conflict-<timestamp>.md` — conflict copies
+ *   - `.lumen-conflicts.md` — conflict log
+ */
+export function isConflictFile(path: string): boolean {
+	const name = path.split('/').pop() ?? path;
+	return name === '.lumen-conflicts.md' || /\.conflict(?:-\d+)?\.md$/.test(name);
+}
+
+/**
  * Check if a file path matches any of the given exclude patterns.
  */
 export function isExcludedByPatterns(path: string, patterns: string[]): boolean {

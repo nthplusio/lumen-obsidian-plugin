@@ -29,7 +29,7 @@ import { SyncClient } from './sync-client';
 import { ConflictLogger } from './conflict-logger';
 import { classifyError } from '../utils/error-classifier';
 import { logger } from '../utils/logger';
-import { isExcludedByPatterns } from '../utils/exclude-pattern';
+import { isConflictFile, isExcludedByPatterns } from '../utils/exclude-pattern';
 import { isSafePath } from '../utils/path-safety';
 import { TEXT_EXTENSIONS, UPLOAD_BATCH_SIZE, BATCH_MAX_RETRIES, BATCH_RETRY_BASE_MS, NOTICE_DURATION_ERROR_MS } from './constants';
 import { networkStatus } from '../utils/network-status';
@@ -903,7 +903,7 @@ export class SyncManager {
 			// Deleted files may have stale/undefined stat, so we check only path exclusion
 			// (not isSyncableFile which requires stat.size)
 			this.plugin.app.vault.on('delete', (file: TAbstractFile) => {
-				if (file instanceof TFile && !isExcludedByPatterns(file.path, this.currentExcludePatterns)) {
+				if (file instanceof TFile && !isConflictFile(file.path) && !isExcludedByPatterns(file.path, this.currentExcludePatterns)) {
 					this.onFileDeleted(file.path);
 				}
 			}),
@@ -920,6 +920,7 @@ export class SyncManager {
 
 	private isSyncableFile(file: TAbstractFile): file is TFile {
 		return file instanceof TFile
+			&& !isConflictFile(file.path)
 			&& !isExcludedByPatterns(file.path, this.currentExcludePatterns)
 			&& file.stat.size <= this.currentMaxFileSize;
 	}

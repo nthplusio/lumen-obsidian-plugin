@@ -10,7 +10,7 @@
 import { Notice, Platform, TFile, Vault } from 'obsidian';
 import type { FileManifestEntry, LumenSettings } from '../types';
 import { logger } from '../utils/logger';
-import { isExcludedByPatterns } from '../utils/exclude-pattern';
+import { isConflictFile, isExcludedByPatterns } from '../utils/exclude-pattern';
 import { TEXT_EXTENSIONS } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ export class FileHasher {
 	// -----------------------------------------------------------------------
 
 	private isExcluded(path: string): boolean {
-		return isExcludedByPatterns(path, this.excludePatterns);
+		return isConflictFile(path) || isExcludedByPatterns(path, this.excludePatterns);
 	}
 
 	private isDeniedExtension(ext: string): boolean {
