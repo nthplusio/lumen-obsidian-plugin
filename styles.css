@@ -170,10 +170,11 @@
 	background: var(--background-modifier-hover);
 }
 
-.lumen-tab-active {
+.lumen-tab.lumen-tab-active,
+.lumen-tab.lumen-tab-active:hover {
 	color: var(--text-accent);
-	background: var(--background-secondary);
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+	background: var(--background-modifier-hover);
+	box-shadow: inset 0 -2px 0 var(--text-accent);
 }
 
 .lumen-tab-icon {
