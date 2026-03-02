@@ -69,6 +69,12 @@ export interface ConflictEntry {
 	conflictCopyPath?: string;
 }
 
+/** A conflict that was resolved locally and should be reported to the server */
+export interface ResolvedConflict {
+	path: string;
+	supersededHash: string;
+}
+
 /** An unresolved conflict tracked by the plugin for user resolution */
 export interface UnresolvedConflict {
 	path: string;
@@ -249,6 +255,9 @@ export interface ConversationSummary {
 	title: string | null;
 	createdAt: string;
 	updatedAt: string;
+	totalInputTokens?: number;
+	totalOutputTokens?: number;
+	archivedAt?: string | null;
 }
 
 /** Response from GET /api/conversations */
@@ -271,6 +280,7 @@ export interface SendMessageRequest {
 export interface StreamMetadata {
 	sources: ChatSource[];
 	tokenUsage?: { input: number; output: number };
+	toolsUsed?: Array<{ name: string }>;
 	turnsUsed: number;
 	turnsRemaining: number;
 }
@@ -352,8 +362,10 @@ export interface ThinkingState {
 /** A single message from the server conversation history */
 export interface ConversationMessage {
 	id: string;
-	role: 'user' | 'assistant';
-	content: string;
+	role: 'user' | 'assistant' | 'system' | 'tool';
+	content: string | null;
+	eventType?: string;
+	eventData?: Record<string, unknown>;
 	sources?: ChatSource[];
 	createdAt: string;
 }
@@ -397,9 +409,10 @@ export interface ServerStatus {
 export interface DocumentContext {
 	path: string;
 	title: string;
-	tags: string[];
-	links: string[];
-	backlinks: string[];
+	frontmatter: Record<string, unknown>;
+	outgoingLinks: string[];
+	incomingLinks: string[];
+	relatedDocuments?: SearchResult[];
 	sections: Array<{
 		heading: string;
 		level: number;

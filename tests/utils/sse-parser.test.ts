@@ -324,6 +324,37 @@ describe('parseConversationSSE', () => {
 		});
 	});
 
+	it('extracts tools_used from lumen_metadata', () => {
+		const buffer = [
+			'event: lumen_metadata',
+			'data: {"sources":[],"token_usage":{"input":100,"output":50},"tools_used":[{"name":"semantic_search"},{"name":"get_document_context"}],"turns_used":1,"turns_remaining":9}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.metadata).not.toBeNull();
+		expect(result.metadata!.toolsUsed).toEqual([
+			{ name: 'semantic_search' },
+			{ name: 'get_document_context' },
+		]);
+	});
+
+	it('handles lumen_metadata without tools_used', () => {
+		const buffer = [
+			'event: lumen_metadata',
+			'data: {"sources":[],"token_usage":{"input":10,"output":20},"turns_used":0,"turns_remaining":10}',
+			'',
+			'',
+		].join('\n');
+
+		const result = parseConversationSSE(buffer);
+
+		expect(result.metadata).not.toBeNull();
+		expect(result.metadata!.toolsUsed).toBeUndefined();
+	});
+
 	it('skips ping events', () => {
 		const buffer = [
 			'event: ping',

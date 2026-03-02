@@ -359,11 +359,13 @@ export function useChat(): UseChatReturn {
 
 		try {
 			const conversation = await chatClient.getConversation(id);
-			const messages: ChatMessage[] = conversation.messages.map(msg => ({
-				role: msg.role,
-				content: msg.content,
-				sources: msg.sources,
-			}));
+			const messages: ChatMessage[] = conversation.messages
+				.filter(msg => msg.role === 'user' || msg.role === 'assistant')
+				.map(msg => ({
+					role: msg.role as 'user' | 'assistant',
+					content: msg.content ?? '',
+					sources: msg.sources,
+				}));
 			dispatch({ type: 'SET_MESSAGES', messages });
 			if (conversation.title) {
 				dispatch({ type: 'SET_CONVERSATION', id, title: conversation.title });

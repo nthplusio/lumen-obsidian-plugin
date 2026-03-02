@@ -40,8 +40,11 @@ export class ApiClient extends LumenHttpClient {
 		options: {
 			limit?: number;
 			tags?: string[];
-			dateFrom?: string;
-			dateTo?: string;
+			dateAfter?: string;
+			dateBefore?: string;
+			folder?: string;
+			fileType?: string;
+			hasLinks?: boolean;
 			hybrid?: boolean;
 			bm25_weight?: number;
 		} = {}
@@ -49,8 +52,11 @@ export class ApiClient extends LumenHttpClient {
 		const body: Record<string, unknown> = { query };
 		if (options.limit !== undefined) body['limit'] = options.limit;
 		if (options.tags?.length) body['tags'] = options.tags;
-		if (options.dateFrom) body['date_from'] = options.dateFrom;
-		if (options.dateTo) body['date_to'] = options.dateTo;
+		if (options.dateAfter) body['date_after'] = options.dateAfter;
+		if (options.dateBefore) body['date_before'] = options.dateBefore;
+		if (options.folder) body['folder'] = options.folder;
+		if (options.fileType) body['file_type'] = options.fileType;
+		if (options.hasLinks !== undefined) body['has_links'] = options.hasLinks;
 		if (options.hybrid) body['hybrid'] = true;
 		if (options.bm25_weight !== undefined) body['bm25_weight'] = options.bm25_weight;
 
@@ -80,7 +86,16 @@ export class ApiClient extends LumenHttpClient {
 			method: 'GET',
 			headers: this.headers,
 		});
-		return response.json as DocumentContext;
+		const raw = response.json as Record<string, unknown>;
+		return {
+			path: raw['path'] as string,
+			title: raw['title'] as string,
+			frontmatter: (raw['frontmatter'] as Record<string, unknown>) ?? {},
+			outgoingLinks: (raw['outgoing_links'] as string[]) ?? [],
+			incomingLinks: (raw['incoming_links'] as string[]) ?? [],
+			relatedDocuments: raw['related_documents'] as DocumentContext['relatedDocuments'],
+			sections: (raw['sections'] as DocumentContext['sections']) ?? [],
+		};
 	}
 
 	/** Find documents similar to a given document */

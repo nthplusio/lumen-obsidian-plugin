@@ -16,6 +16,7 @@
 import { requestUrl } from 'obsidian';
 import type {
 	FileManifestEntry,
+	ResolvedConflict,
 	SyncManifestResponseV2,
 	SyncUploadResponse,
 	SyncDownloadResponse,
@@ -226,6 +227,7 @@ export class SyncClient extends LumenHttpClient {
 		lastSyncSeq: number,
 		cursor?: string,
 		signal?: AbortSignal,
+		resolvedConflicts?: ResolvedConflict[],
 	): Promise<SyncManifestResponseV2> {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
@@ -247,6 +249,12 @@ export class SyncClient extends LumenHttpClient {
 		};
 		if (cursor) {
 			body.cursor = cursor;
+		}
+		if (resolvedConflicts?.length) {
+			body.resolved_conflicts = resolvedConflicts.map(c => ({
+				path: c.path,
+				superseded_hash: c.supersededHash,
+			}));
 		}
 
 		const response = await requestUrl({

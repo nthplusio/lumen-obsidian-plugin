@@ -138,10 +138,14 @@ export function parseConversationSSE(buffer: string): ConversationSSEResult {
 						.map(s => ({ path: s['path'] as string, score: s['score'] as number }));
 				}
 				const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
+				const rawToolsUsed = data['tools_used'] as Array<Record<string, unknown>> | undefined;
 				metadata = {
 					sources,
 					tokenUsage: tokenUsage
 						? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+						: undefined,
+					toolsUsed: Array.isArray(rawToolsUsed)
+						? rawToolsUsed.filter(t => typeof t['name'] === 'string').map(t => ({ name: t['name'] as string }))
 						: undefined,
 					turnsUsed: (data['turns_used'] as number) ?? 0,
 					turnsRemaining: (data['turns_remaining'] as number) ?? 0,
@@ -276,10 +280,14 @@ export class SSEStreamParser {
 							.map(s => ({ path: s['path'] as string, score: s['score'] as number }));
 					}
 					const tokenUsage = data['token_usage'] as Record<string, unknown> | undefined;
+					const rawToolsUsed = data['tools_used'] as Array<Record<string, unknown>> | undefined;
 					event.metadata = {
 						sources: event.sources ?? [],
 						tokenUsage: tokenUsage
 							? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+							: undefined,
+						toolsUsed: Array.isArray(rawToolsUsed)
+							? rawToolsUsed.filter(t => typeof t['name'] === 'string').map(t => ({ name: t['name'] as string }))
 							: undefined,
 						turnsUsed: (data['turns_used'] as number) ?? 0,
 						turnsRemaining: (data['turns_remaining'] as number) ?? 0,

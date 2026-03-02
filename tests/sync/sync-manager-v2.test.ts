@@ -216,6 +216,7 @@ describe('SyncManager V2 integration', () => {
 				5,
 				'old-cursor',
 				expect.any(AbortSignal),
+				undefined,
 			);
 		});
 

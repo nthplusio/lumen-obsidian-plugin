@@ -21,6 +21,7 @@ import type {
 	SyncUploadResponse,
 	FileManifestEntry,
 	ConflictEntry,
+	ResolvedConflict,
 	SyncManifestResponseV2,
 	LumenSettings,
 } from '../types';
@@ -70,6 +71,7 @@ export class SyncManager {
 	private syncInProgress = false;
 	private pendingChanges: Set<string> = new Set();
 	private deletedPaths: Set<string> = new Set();
+	private resolvedConflicts: ResolvedConflict[] = [];
 
 	// Timers
 	private debounceTimer: number | null = null;
@@ -470,7 +472,11 @@ export class SyncManager {
 			this.settings.lastSyncSeq,
 			this.settings.lastSyncCursor || undefined,
 			signal,
+			this.resolvedConflicts.length > 0 ? this.resolvedConflicts : undefined,
 		);
+
+		// Clear resolved conflicts after successful manifest exchange
+		this.resolvedConflicts = [];
 
 		const serverChanges = manifestResponse.server_changes ?? [];
 		logger.info(
@@ -579,6 +585,7 @@ export class SyncManager {
 				try {
 					await this.writeToVault(conflictPath, localContent);
 					conflictCopyPaths.set(c.path, conflictPath);
+					this.resolvedConflicts.push({ path: c.path, supersededHash: c.server_hash });
 					logger.info(`Saved conflict copy: ${c.path} → ${conflictPath}`);
 				} catch (err) {
 					logger.error(`Failed to save conflict copy for ${c.path}:`, err);
