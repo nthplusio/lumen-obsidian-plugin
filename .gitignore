@@ -1,6 +1,5 @@
 node_modules/
 main.js
-manifest-beta.json
 coverage/
 *.js.map
 data.json
