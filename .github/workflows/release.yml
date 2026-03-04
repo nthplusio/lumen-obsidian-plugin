@@ -43,7 +43,7 @@ jobs:
               --title "$tag" \
               --generate-notes \
               --prerelease \
-              main.js manifest-beta.json styles.css
+              main.js manifest.json manifest-beta.json styles.css
           else
             gh release create "$tag" \
               --title "$tag" \
