@@ -29,6 +29,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Generate beta manifest
+        if: contains(github.ref, '-beta.')
+        run: node version-bump.mjs
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
