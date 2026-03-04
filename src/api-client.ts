@@ -26,13 +26,22 @@ export class ApiClient extends LumenHttpClient {
 		this.serverUrl = serverUrl;
 	}
 
-	/** Test connectivity by calling GET /health */
+	/** Test connectivity and verify the API key is valid */
 	async testConnection(): Promise<ServerStatus> {
 		const response = await requestUrl({
 			url: `${this.baseUrl}/health`,
 			method: 'GET',
 			headers: this.headers,
 		});
+
+		// /health may not validate auth — hit an authenticated endpoint
+		// to confirm the API key is accepted by the server
+		await requestUrl({
+			url: `${this.baseUrl}/api/tags`,
+			method: 'GET',
+			headers: this.headers,
+		});
+
 		return response.json as ServerStatus;
 	}
 

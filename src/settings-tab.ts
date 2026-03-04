@@ -20,6 +20,7 @@ export class LumenSettingTab extends PluginSettingTab {
 	private _lastSyncValueEl: HTMLElement | null = null;
 	private _syncStateValueEl: HTMLElement | null = null;
 	private _connectionStatusEl: HTMLElement | null = null;
+	private _testConnectionBtn: HTMLButtonElement | null = null;
 	private _lastConnectionResult: { type: 'success' | 'error' | 'info'; message: string } | null = null;
 
 	constructor(app: App, plugin: LumenPlugin) {
@@ -82,6 +83,9 @@ export class LumenSettingTab extends PluginSettingTab {
 					this.plugin.settings.apiKey = trimmed;
 					await this.plugin.saveSettings();
 					this.updateKeyValidation(keySetting, trimmed);
+					if (this._testConnectionBtn) {
+						this._testConnectionBtn.disabled = !trimmed;
+					}
 				});
 			text.inputEl.type = 'password';
 			text.inputEl.autocomplete = 'off';
@@ -97,16 +101,13 @@ export class LumenSettingTab extends PluginSettingTab {
 		new Setting(content)
 			.setName('Test Connection')
 			.setDesc('Verify connectivity and fetch workspace configuration')
-			.addButton(button =>
+			.addButton(button => {
+				this._testConnectionBtn = button.buttonEl;
 				button
 					.setButtonText('Test Connection')
 					.setCta()
+					.setDisabled(!this.plugin.settings.apiKey)
 					.onClick(async () => {
-						if (!this.plugin.settings.apiKey) {
-							new Notice('Please enter your API key first');
-							return;
-						}
-
 						button.setButtonText('Connecting...');
 						button.setDisabled(true);
 						this.clearConnectionStatus();
@@ -136,10 +137,10 @@ export class LumenSettingTab extends PluginSettingTab {
 							new Notice(`Connection failed: ${errorMsg}`);
 						} finally {
 							button.setButtonText('Test Connection');
-							button.setDisabled(false);
+							button.setDisabled(!this.plugin.settings.apiKey);
 						}
-					})
-			);
+					});
+			});
 	}
 
 	// -----------------------------------------------------------------------
