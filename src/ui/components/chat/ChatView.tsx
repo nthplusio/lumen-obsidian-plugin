@@ -580,6 +580,15 @@ function ChatInputArea({
 			</div>
 			<div className="lumen-chat-button-row">
 				<div className="lumen-chat-button-group-left">
+					{canDeepResearch && (
+						<button
+							className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
+							aria-label="Toggle Deep Research"
+							aria-pressed={deepResearchEnabled}
+							onClick={onToggleDeepResearch}
+							ref={sparklesRef}
+						/>
+					)}
 					{activeNotePath && (
 						<button
 							className={`lumen-chat-note-context-toggle ${activeNoteContextEnabled ? 'is-active' : ''}`}
@@ -588,15 +597,6 @@ function ChatInputArea({
 							onClick={onToggleActiveNoteContext}
 							ref={noteIconRef}
 							title={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
-						/>
-					)}
-					{canDeepResearch && (
-						<button
-							className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
-							aria-label="Toggle Deep Research"
-							aria-pressed={deepResearchEnabled}
-							onClick={onToggleDeepResearch}
-							ref={sparklesRef}
 						/>
 					)}
 				</div>
