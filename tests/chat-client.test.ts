@@ -382,6 +382,18 @@ describe('ChatClient', () => {
 			}
 		});
 
+		it('throws PlanUpgradeRequiredError on 403 with Title Case error from feature gate', async () => {
+			mockStreamResponse(403, JSON.stringify({
+				error: 'Plan upgrade required',
+				message: 'This feature requires the starter plan or higher',
+				required_plan: 'starter',
+				current_plan: null,
+			}));
+
+			await expect(client.sendMessage('conv-1', 'Q'))
+				.rejects.toThrow(PlanUpgradeRequiredError);
+		});
+
 		it('throws generic Error on 403 without plan_upgrade_required', async () => {
 			mockStreamResponse(403, JSON.stringify({ message: 'Access denied' }));
 
