@@ -88,7 +88,11 @@ describe('LumenMainView', () => {
 			currentSyncState: 'idle',
 			currentSyncProgress: undefined,
 			currentIndexingProgress: undefined,
+			currentPlanTier: null,
+			planLoaded: false,
+			planFetchFailed: false,
 			onSyncStateChange: vi.fn(() => () => {}),
+			onPlanChange: vi.fn(() => () => {}),
 		};
 
 		view = new LumenMainView({} as any, mockPlugin);

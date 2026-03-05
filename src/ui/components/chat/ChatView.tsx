@@ -13,11 +13,10 @@ import { LoadingDots, SourceChips } from '../shared';
 export function ChatView() {
 	const chat = useChat();
 	const { state } = chat;
+	const { planTier } = usePlugin();
 
-	// Refresh plan gating when the view mounts
-	useEffect(() => {
-		chat.refreshPlanGating();
-	}, []);
+	// Derive deep research eligibility from plan context
+	const canDeepResearch = planTier === 'plus' || planTier === 'pro';
 
 	return (
 		<div className="lumen-chat-view">
@@ -49,7 +48,7 @@ export function ChatView() {
 			/>
 			<ChatInputArea
 				status={state.status}
-				canDeepResearch={state.canDeepResearch}
+				canDeepResearch={canDeepResearch}
 				deepResearchEnabled={state.deepResearchEnabled}
 				activeNoteContextEnabled={state.activeNoteContextEnabled}
 				activeNotePath={state.activeNotePath}

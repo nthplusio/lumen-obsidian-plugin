@@ -24,7 +24,6 @@ interface ChatState {
 	conversationId: string | null;
 	conversationTitle: string | null;
 	deepResearchEnabled: boolean;
-	canDeepResearch: boolean;
 	/** Active note context — when enabled, includes the current note in chat messages */
 	activeNoteContextEnabled: boolean;
 	activeNotePath: string | null;
@@ -56,7 +55,6 @@ type ChatAction =
 	| { type: 'SET_CONVERSATION'; id: string | null; title: string | null }
 	| { type: 'NEW_CHAT' }
 	| { type: 'TOGGLE_DEEP_RESEARCH' }
-	| { type: 'SET_CAN_DEEP_RESEARCH'; can: boolean }
 	| { type: 'SET_CONVERSATION_DROPDOWN'; open: boolean }
 	| { type: 'SET_CONVERSATIONS'; conversations: ConversationSummary[]; loading: boolean }
 	| { type: 'SET_CONVERSATIONS_LOADING' }
@@ -73,7 +71,6 @@ const initialState: ChatState = {
 	conversationId: null,
 	conversationTitle: null,
 	deepResearchEnabled: false,
-	canDeepResearch: false,
 	activeNoteContextEnabled: false,
 	activeNotePath: null,
 	streamContent: '',
@@ -165,12 +162,6 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 			};
 		case 'TOGGLE_DEEP_RESEARCH':
 			return { ...state, deepResearchEnabled: !state.deepResearchEnabled };
-		case 'SET_CAN_DEEP_RESEARCH':
-			return {
-				...state,
-				canDeepResearch: action.can,
-				deepResearchEnabled: action.can ? state.deepResearchEnabled : false,
-			};
 		case 'SET_CONVERSATION_DROPDOWN':
 			return { ...state, conversationDropdownOpen: action.open };
 		case 'SET_CONVERSATIONS':
@@ -211,7 +202,6 @@ export interface UseChatReturn {
 	toggleActiveNoteContext: () => void;
 	toggleConversationDropdown: () => void;
 	dismissRateLimit: () => void;
-	refreshPlanGating: () => Promise<void>;
 }
 
 export function useChat(): UseChatReturn {
@@ -402,20 +392,6 @@ export function useChat(): UseChatReturn {
 		dispatch({ type: 'DISMISS_RATE_LIMIT' });
 	}, []);
 
-	const refreshPlanGating = useCallback(async () => {
-		const chatClient = plugin.chatClient;
-		if (!chatClient) {
-			dispatch({ type: 'SET_CAN_DEEP_RESEARCH', can: false });
-			return;
-		}
-		try {
-			const planInfo = await chatClient.getWorkspacePlan();
-			dispatch({ type: 'SET_CAN_DEEP_RESEARCH', can: planInfo.plan === 'plus' || planInfo.plan === 'pro' });
-		} catch {
-			dispatch({ type: 'SET_CAN_DEEP_RESEARCH', can: false });
-		}
-	}, [plugin]);
-
 	return {
 		state,
 		sendMessage,
@@ -427,6 +403,5 @@ export function useChat(): UseChatReturn {
 		toggleActiveNoteContext,
 		toggleConversationDropdown,
 		dismissRateLimit,
-		refreshPlanGating,
 	};
 }

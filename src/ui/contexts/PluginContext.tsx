@@ -6,7 +6,7 @@
 import { createContext, useContext } from 'react';
 import type { App, Component, ItemView } from 'obsidian';
 import type LumenPlugin from '../../main';
-import type { SyncState } from '../../types';
+import type { PlanTier, SyncState } from '../../types';
 
 export interface SyncProgress {
 	current: number;
@@ -35,6 +35,12 @@ export interface PluginContextValue {
 	syncProgress?: SyncProgress;
 	/** Current indexing progress (only set when indexing is active) */
 	indexingProgress?: IndexingProgress;
+	/** Current workspace plan tier (null = no subscription) */
+	planTier: PlanTier;
+	/** Whether plan info has been fetched at least once */
+	planLoaded: boolean;
+	/** Whether the plan fetch failed (allow access by default on failure) */
+	planFetchFailed: boolean;
 }
 
 const PluginContext = createContext<PluginContextValue | null>(null);
