@@ -91,6 +91,20 @@ git push && git push --tags
 
 This triggers `.github/workflows/release.yml` which builds, tests, and creates a GitHub Release (with `--prerelease` for beta tags).
 
-## Step 8: Confirm
+## Step 8: Update manifest on main (beta only)
+
+BRAT reads `manifest-beta.json` from the repo's default branch (`main`). After a beta release, update it:
+
+```bash
+git stash
+git checkout main
+git checkout staging -- manifest-beta.json
+git commit -m "Update manifest-beta.json to <new-version>"
+git push
+git checkout staging
+git stash pop  # only if stash was created
+```
+
+## Step 9: Confirm
 
 Tell the user: version number, channel (stable/beta), commit count, and link to https://github.com/nthplusio/lumen-obsidian-plugin/actions
