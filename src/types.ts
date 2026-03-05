@@ -151,6 +151,7 @@ export interface SyncStatusResponse {
 	last_sync_at: string | null;
 	cursor: string | null;
 	file_count: number;
+	file_type_counts?: Record<string, number>;
 	indexing_status: {
 		active: boolean;
 		progress: number;
@@ -160,6 +161,9 @@ export interface SyncStatusResponse {
 	exclude_patterns: string[];
 	max_file_size_bytes: number;
 	denied_extensions: string[];
+	sync_enabled: boolean;
+	sync_interval_minutes: number;
+	event_sync_enabled: boolean;
 }
 
 // ============================================================================
@@ -272,6 +276,7 @@ export interface ConversationListResponse {
 export interface SendMessageRequest {
 	message: string;
 	deep_research?: boolean;
+	skill_hints?: string[];
 }
 
 // ============================================================================
