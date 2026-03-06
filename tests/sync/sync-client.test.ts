@@ -11,6 +11,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SyncClient } from '../../src/sync/sync-client';
+import {
+	WorkspaceConfirmationError,
+	WorkspaceNameMismatchError,
+} from '../../src/types';
 import type {
 	PluginRegistrationResponse,
 	SyncManifestResponseV2,
@@ -170,6 +174,72 @@ describe('SyncClient', () => {
 
 			await expect(client.register('', 'name', '1.0.0', 'vault'))
 				.rejects.toThrow(/Registration failed.*400/);
+		});
+
+		it('sends confirm_workspace_name when provided', async () => {
+			const client = createClient();
+			mockRequestUrlSuccess(201, registrationResponse);
+
+			await client.register('d', 'n', '1.0.0', 'v', 'desktop', 'My Workspace');
+
+			const call = mockRequestUrl.mock.calls[0]![0] as any;
+			const body = JSON.parse(call.body);
+			expect(body.confirm_workspace_name).toBe('My Workspace');
+		});
+
+		it('throws WorkspaceConfirmationError on 409 WORKSPACE_CONFIRMATION_REQUIRED', async () => {
+			const client = createClient();
+			const error409 = Object.assign(new Error('Request failed'), {
+				status: 409,
+				text: JSON.stringify({
+					error_code: 'WORKSPACE_CONFIRMATION_REQUIRED',
+					message: 'Workspace has existing content',
+					details: {
+						workspace_name: 'My Vault',
+						workspace_id: 'ws-123',
+						existing_file_count: 42,
+						existing_sources: ['git', 'plugin'],
+						existing_device_count: 1,
+					},
+				}),
+			});
+			mockRequestUrl.mockRejectedValueOnce(error409);
+
+			await expect(client.register('d', 'n', '1.0.0', 'v'))
+				.rejects.toBeInstanceOf(WorkspaceConfirmationError);
+
+			try {
+				await client.register('d', 'n', '1.0.0', 'v');
+			} catch (e) {
+				// Re-mock since first call consumed it
+			}
+			// Verify via fresh call
+			mockRequestUrl.mockRejectedValueOnce(error409);
+			try {
+				await client.register('d', 'n', '1.0.0', 'v');
+			} catch (e) {
+				const err = e as WorkspaceConfirmationError;
+				expect(err.details.workspaceName).toBe('My Vault');
+				expect(err.details.existingFileCount).toBe(42);
+				expect(err.details.existingSources).toEqual(['git', 'plugin']);
+			}
+		});
+
+		it('throws WorkspaceNameMismatchError on 409 WORKSPACE_NAME_MISMATCH', async () => {
+			const client = createClient();
+			const error409 = Object.assign(new Error('Request failed'), {
+				status: 409,
+				text: JSON.stringify({
+					error_code: 'WORKSPACE_NAME_MISMATCH',
+					message: 'Name does not match',
+					expected: 'My Vault',
+					provided: 'Wrong Name',
+				}),
+			});
+			mockRequestUrl.mockRejectedValueOnce(error409);
+
+			await expect(client.register('d', 'n', '1.0.0', 'v', 'desktop', 'Wrong Name'))
+				.rejects.toBeInstanceOf(WorkspaceNameMismatchError);
 		});
 	});
 
