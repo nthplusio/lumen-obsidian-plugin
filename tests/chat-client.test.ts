@@ -115,12 +115,12 @@ describe('ChatClient', () => {
 	describe('getWorkspacePlan', () => {
 		it('fetches plan from server on first call', async () => {
 			mockRequestUrl.mockResolvedValueOnce({
-				json: { subscription: { plan: 'plus', status: 'active' } },
+				json: { subscription: { plan: 'free', status: 'active' } },
 			});
 
 			const result = await client.getWorkspacePlan();
 
-			expect(result.plan).toBe('plus');
+			expect(result.plan).toBe('free');
 			expect(result.subscriptionStatus).toBe('active');
 			expect(mockRequestUrl).toHaveBeenCalledOnce();
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
@@ -163,7 +163,7 @@ describe('ChatClient', () => {
 
 		it('invalidates cache on settings change', async () => {
 			mockRequestUrl.mockResolvedValueOnce({
-				json: { subscription: { plan: 'starter', status: 'active' } },
+				json: { subscription: { plan: 'free', status: 'active' } },
 			});
 
 			await client.getWorkspacePlan();
@@ -341,8 +341,8 @@ describe('ChatClient', () => {
 		it('throws PlanUpgradeRequiredError on 403 with plan_upgrade_required', async () => {
 			mockStreamResponse(403, JSON.stringify({
 				error: 'plan_upgrade_required',
-				message: 'Deep Research requires a Plus plan',
-				required_plan: 'plus',
+				message: 'Deep Research requires a Pro plan',
+				required_plan: 'pro',
 			}));
 
 			await expect(client.sendMessage('conv-1', 'Q'))
@@ -385,8 +385,8 @@ describe('ChatClient', () => {
 		it('throws PlanUpgradeRequiredError on 403 with Title Case error from feature gate', async () => {
 			mockStreamResponse(403, JSON.stringify({
 				error: 'Plan upgrade required',
-				message: 'This feature requires the starter plan or higher',
-				required_plan: 'starter',
+				message: 'This feature requires the free plan or higher',
+				required_plan: 'free',
 				current_plan: null,
 			}));
 

@@ -456,7 +456,7 @@ export class ChatClient extends LumenHttpClient {
 		if (status === 403) {
 			const errorCode = (body['error'] as string)?.toLowerCase().replace(/\s+/g, '_') ?? '';
 			if (errorCode === 'plan_upgrade_required') {
-				const requiredPlan = (body['required_plan'] as string) ?? 'starter';
+				const requiredPlan = (body['required_plan'] as string) ?? 'free';
 				const msg = (body['message'] as string) ?? `This feature requires a ${requiredPlan} plan.`;
 				logger.warn(`Chat 403: ${msg}`);
 				throw new PlanUpgradeRequiredError(msg, requiredPlan);

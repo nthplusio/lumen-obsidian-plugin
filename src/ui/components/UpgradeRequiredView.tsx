@@ -10,7 +10,7 @@ import { setIcon } from 'obsidian';
 import { LUMEN_API_URL } from '../../types';
 
 interface UpgradeRequiredViewProps {
-	feature: 'search' | 'chat';
+	feature: 'chat';
 }
 
 export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
@@ -20,7 +20,7 @@ export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
 		if (iconRef.current) setIcon(iconRef.current, 'lock');
 	}, []);
 
-	const featureLabel = feature === 'search' ? 'Search' : 'Chat';
+	const featureLabel = feature === 'chat' ? 'Chat' : feature;
 
 	return (
 		<div className="lumen-upgrade-required">
@@ -29,7 +29,7 @@ export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
 				{featureLabel} requires a subscription
 			</h2>
 			<p className="lumen-upgrade-required-desc">
-				Upgrade your plan to unlock {featureLabel.toLowerCase()} and other premium features.
+				Sign up for a free plan to unlock {featureLabel.toLowerCase()} and other features.
 			</p>
 			<a
 				className="lumen-upgrade-required-cta"
@@ -37,7 +37,7 @@ export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
 				target="_blank"
 				rel="noopener noreferrer"
 			>
-				View Plans
+				Sign Up
 			</a>
 		</div>
 	);

@@ -241,8 +241,8 @@ export interface ChatResponse {
 // Plan / Subscription Types
 // ============================================================================
 
-/** Workspace subscription tier */
-export type PlanTier = 'starter' | 'plus' | 'pro' | null;
+/** Workspace subscription tier (free/pro since 2026-03-05 migration) */
+export type PlanTier = 'free' | 'pro' | null;
 
 /** Cached workspace plan info */
 export interface WorkspacePlanInfo {

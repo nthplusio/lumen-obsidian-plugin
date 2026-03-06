@@ -15,8 +15,8 @@ export function ChatView() {
 	const { state } = chat;
 	const { planTier } = usePlugin();
 
-	// Derive deep research eligibility from plan context
-	const canDeepResearch = planTier === 'plus' || planTier === 'pro';
+	// Deep research toggle only for pro tier (free tier has limited turns)
+	const canDeepResearch = planTier === 'pro';
 
 	return (
 		<div className="lumen-chat-view">
