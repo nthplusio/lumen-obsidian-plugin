@@ -73,20 +73,39 @@ export class SyncClient extends LumenHttpClient {
 			body.confirm_workspace_name = confirmWorkspaceName;
 		}
 
-		let response;
-		try {
-			response = await requestUrl({
-				url,
-				method: 'POST',
-				headers: this.headers,
-				body: JSON.stringify(body),
-			});
-		} catch (err) {
-			// requestUrl throws on non-2xx — check for 409 workspace confirmation
-			if (err instanceof Error && 'status' in err && (err as Error & { status: number }).status === 409) {
-				this.handle409(err, confirmWorkspaceName);
+		// throw: false — we need to inspect 409 responses for workspace confirmation
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: this.headers,
+			body: JSON.stringify(body),
+			throw: false,
+		});
+
+		if (response.status === 409) {
+			const json = response.json as Record<string, unknown> | undefined;
+			const errorCode = json?.error_code ?? json?.code;
+
+			if (errorCode === 'WORKSPACE_NAME_MISMATCH') {
+				throw new WorkspaceNameMismatchError(
+					(json?.message as string) || 'Workspace name does not match',
+					(json?.expected as string) || '',
+					(json?.provided as string) || confirmWorkspaceName || '',
+				);
 			}
-			throw err;
+
+			// Default 409: WORKSPACE_CONFIRMATION_REQUIRED
+			const details = (json?.details ?? json) as Record<string, unknown>;
+			throw new WorkspaceConfirmationError(
+				(json?.message as string) || 'Workspace confirmation required',
+				{
+					workspaceName: (details?.workspace_name as string) || '',
+					workspaceId: (details?.workspace_id as string) || '',
+					existingFileCount: (details?.existing_file_count as number) || 0,
+					existingSources: (details?.existing_sources as string[]) || [],
+					existingDeviceCount: (details?.existing_device_count as number) || 0,
+				},
+			);
 		}
 
 		if (response.status !== 201) {
@@ -386,49 +405,6 @@ export class SyncClient extends LumenHttpClient {
 		} catch {
 			return '';
 		}
-	}
-
-	/**
-	 * Handle a 409 error thrown by requestUrl during registration.
-	 *
-	 * Obsidian's requestUrl throws on non-2xx, so we parse the error's
-	 * response body to distinguish WORKSPACE_CONFIRMATION_REQUIRED
-	 * from WORKSPACE_NAME_MISMATCH.
-	 *
-	 * Always throws — either a typed error or re-throws the original.
-	 */
-	private handle409(err: Error, confirmWorkspaceName?: string): never {
-		let json: Record<string, unknown> = {};
-		try {
-			const text = 'text' in err ? String((err as Error & { text: string }).text) : '';
-			json = JSON.parse(text) as Record<string, unknown>;
-		} catch {
-			// Response may not be JSON — fall through to re-throw original
-			throw err;
-		}
-
-		const errorCode = json.error_code ?? json.code;
-
-		if (errorCode === 'WORKSPACE_NAME_MISMATCH') {
-			throw new WorkspaceNameMismatchError(
-				(json.message as string) || 'Workspace name does not match',
-				(json.expected as string) || '',
-				(json.provided as string) || confirmWorkspaceName || '',
-			);
-		}
-
-		// Default 409: WORKSPACE_CONFIRMATION_REQUIRED
-		const details = (json.details ?? json) as Record<string, unknown>;
-		throw new WorkspaceConfirmationError(
-			(json.message as string) || 'Workspace confirmation required',
-			{
-				workspaceName: (details.workspace_name as string) || '',
-				workspaceId: (details.workspace_id as string) || '',
-				existingFileCount: (details.existing_file_count as number) || 0,
-				existingSources: (details.existing_sources as string[]) || [],
-				existingDeviceCount: (details.existing_device_count as number) || 0,
-			},
-		);
 	}
 
 }
