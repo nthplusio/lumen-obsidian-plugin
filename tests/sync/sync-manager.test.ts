@@ -25,8 +25,10 @@ vi.mock('obsidian', () => ({
 	TAbstractFile: class {},
 	Plugin: class {},
 	Vault: class {},
+	Modal: class { app: unknown; contentEl = { empty: () => {}, createEl: () => ({}), createDiv: () => ({}), addClass: () => {} }; constructor(app: unknown) { this.app = app; } open() {} close() {} onOpen() {} onClose() {} },
 	normalizePath: (p: string) => p,
 	Platform: { isDesktop: true, isMobile: false },
+	setIcon: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------

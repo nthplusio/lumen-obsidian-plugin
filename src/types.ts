@@ -319,6 +319,39 @@ export interface RateLimitError {
 	resets_at: string;
 }
 
+/** Details returned by the server when workspace confirmation is needed */
+export interface WorkspaceConfirmationDetails {
+	workspaceName: string;
+	workspaceId: string;
+	existingFileCount: number;
+	existingSources: string[];
+	existingDeviceCount: number;
+}
+
+/** Thrown when server returns 409 WORKSPACE_CONFIRMATION_REQUIRED */
+export class WorkspaceConfirmationError extends Error {
+	readonly details: WorkspaceConfirmationDetails;
+
+	constructor(message: string, details: WorkspaceConfirmationDetails) {
+		super(message);
+		this.name = 'WorkspaceConfirmationError';
+		this.details = details;
+	}
+}
+
+/** Thrown when server returns 409 WORKSPACE_NAME_MISMATCH */
+export class WorkspaceNameMismatchError extends Error {
+	readonly expected: string;
+	readonly provided: string;
+
+	constructor(message: string, expected: string, provided: string) {
+		super(message);
+		this.name = 'WorkspaceNameMismatchError';
+		this.expected = expected;
+		this.provided = provided;
+	}
+}
+
 /** Thrown when server returns 403 with plan_upgrade_required */
 export class PlanUpgradeRequiredError extends Error {
 	readonly requiredPlan: string;
