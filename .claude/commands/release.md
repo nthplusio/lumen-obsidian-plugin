@@ -72,8 +72,8 @@ Local sanity check only — `main.js` is gitignored and built fresh by CI.
 # Stable:
 git add package.json manifest.json versions.json
 
-# Beta (manifest-beta.json is gitignored):
-git add package.json manifest.json
+# Beta:
+git add package.json manifest.json manifest-beta.json
 ```
 
 ```bash
@@ -93,16 +93,15 @@ This triggers `.github/workflows/release.yml` which builds, tests, and creates a
 
 ## Step 8: Update manifest on main (beta only)
 
-BRAT reads `manifest-beta.json` from the repo's default branch (`main`). After a beta release, update it:
+BRAT reads `manifest-beta.json` from the repo's default branch (`main`). After a beta release, copy it over:
 
 ```bash
-git stash
 git checkout main
 git checkout staging -- manifest-beta.json
+git add manifest-beta.json
 git commit -m "Update manifest-beta.json to <new-version>"
 git push
 git checkout staging
-git stash pop  # only if stash was created
 ```
 
 ## Step 9: Confirm
