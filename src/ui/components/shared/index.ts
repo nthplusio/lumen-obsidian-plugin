@@ -1,4 +1,5 @@
 export { EmptyState } from './EmptyState';
+export { ErrorBoundary } from './ErrorBoundary';
 export { ErrorState } from './ErrorState';
 export { LoadingDots } from './LoadingDots';
 export { MarkdownContent } from './MarkdownContent';

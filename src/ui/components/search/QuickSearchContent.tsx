@@ -15,6 +15,7 @@ import type { App } from 'obsidian';
 import type LumenPlugin from '../../../main';
 import type { SearchResult } from '../../../types';
 import { classifyError } from '../../../utils/error-classifier';
+import { ErrorBoundary } from '../shared';
 
 const DEBOUNCE_MS = 200;
 
@@ -104,36 +105,38 @@ export function QuickSearchContent({ plugin, app, onClose }: QuickSearchContentP
 	}, [selectedIndex]);
 
 	return (
-		<div className="lumen-qs" onKeyDown={handleKeyDown}>
-			<QuickSearchInput
-				inputRef={inputRef}
-				query={query}
-				onChange={setQuery}
-				isLoading={status === 'loading'}
-			/>
-			{status === 'done' && results.length > 0 && (
-				<div className="lumen-qs-results" ref={resultsRef}>
-					{results.map((result, i) => (
-						<QuickSearchResult
-							key={`${result.source_path}-${result.chunk_index}`}
-							result={result}
-							isSelected={i === selectedIndex}
-							onClick={() => openResult(result)}
-							onHover={() => setSelectedIndex(i)}
-						/>
-					))}
-				</div>
-			)}
-			{status === 'no-results' && query.trim() && (
-				<div className="lumen-qs-empty">
-					No results for "{query.trim()}"
-				</div>
-			)}
-			{status === 'error' && errorMsg && (
-				<div className="lumen-qs-error">{errorMsg}</div>
-			)}
-			<QuickSearchFooter />
-		</div>
+		<ErrorBoundary>
+			<div className="lumen-qs" onKeyDown={handleKeyDown}>
+				<QuickSearchInput
+					inputRef={inputRef}
+					query={query}
+					onChange={setQuery}
+					isLoading={status === 'loading'}
+				/>
+				{status === 'done' && results.length > 0 && (
+					<div className="lumen-qs-results" ref={resultsRef}>
+						{results.map((result, i) => (
+							<QuickSearchResult
+								key={`${result.source_path}-${result.chunk_index}`}
+								result={result}
+								isSelected={i === selectedIndex}
+								onClick={() => openResult(result)}
+								onHover={() => setSelectedIndex(i)}
+							/>
+						))}
+					</div>
+				)}
+				{status === 'no-results' && query.trim() && (
+					<div className="lumen-qs-empty">
+						No results for "{query.trim()}"
+					</div>
+				)}
+				{status === 'error' && errorMsg && (
+					<div className="lumen-qs-error">{errorMsg}</div>
+				)}
+				<QuickSearchFooter />
+			</div>
+		</ErrorBoundary>
 	);
 }
 

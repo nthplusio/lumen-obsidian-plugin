@@ -23,6 +23,7 @@ import { UpgradeRequiredView } from './components/UpgradeRequiredView';
 import { ConflictBanner } from './components/ConflictBanner';
 import { SidebarHeader } from './components/SidebarHeader';
 import { SyncStatusStrip } from './components/SyncStatusStrip';
+import { ErrorBoundary } from './components/shared';
 
 /** Imperative API exposed via ref for keyboard shortcuts and commands. */
 export interface LumenAppHandle {
@@ -80,12 +81,14 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 
 		return (
 			<PluginProvider value={context}>
-				<SidebarHeader syncStrip={syncStrip} />
-				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
-				<ConflictBanner />
-				{activeMode === 'search' && <SearchView />}
-				{activeMode === 'chat' && (chatNeedsUpgrade ? <UpgradeRequiredView feature="chat" /> : <ChatView />)}
-				{activeMode === 'related' && <RelatedNotesView />}
+				<ErrorBoundary>
+					<SidebarHeader syncStrip={syncStrip} />
+					<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
+					<ConflictBanner />
+					{activeMode === 'search' && <SearchView />}
+					{activeMode === 'chat' && (chatNeedsUpgrade ? <UpgradeRequiredView feature="chat" /> : <ChatView />)}
+					{activeMode === 'related' && <RelatedNotesView />}
+				</ErrorBoundary>
 			</PluginProvider>
 		);
 	},

@@ -8,47 +8,49 @@ import { MarkdownRenderer, setIcon } from 'obsidian';
 import type { SearchResult } from '../../../types';
 import { usePlugin } from '../../contexts/PluginContext';
 import { useSearch } from '../../hooks/useSearch';
-import { EmptyState, ErrorState, TagChip } from '../shared';
+import { EmptyState, ErrorBoundary, ErrorState, TagChip } from '../shared';
 
 export function SearchView() {
 	const search = useSearch();
 	const { state } = search;
 
 	return (
-		<div className="lumen-search-view">
-			<SearchInput
-				query={state.query}
-				onChange={search.onQueryChange}
-			/>
-			<SearchToolbar
-				hybridMode={state.hybridMode}
-				onToggleHybrid={search.toggleHybrid}
-				tagFilterOpen={state.tagFilterOpen}
-				onToggleTagFilter={search.toggleTagFilter}
-				historyOpen={state.historyOpen}
-				hasHistory={state.recentQueries.length > 0}
-				onToggleHistory={search.toggleHistory}
-			/>
-			{state.historyOpen && state.recentQueries.length > 0 && (
-				<SearchHistory
-					queries={state.recentQueries}
-					onSelect={search.selectHistoryQuery}
+		<ErrorBoundary>
+			<div className="lumen-search-view">
+				<SearchInput
+					query={state.query}
+					onChange={search.onQueryChange}
 				/>
-			)}
-			{state.tagFilterOpen && (
-				<TagFilterPanel
-					tagCache={state.tagCache}
-					selectedTags={state.selectedTags}
-					onAddTag={search.addTag}
-					onRemoveTag={search.removeTag}
+				<SearchToolbar
+					hybridMode={state.hybridMode}
+					onToggleHybrid={search.toggleHybrid}
+					tagFilterOpen={state.tagFilterOpen}
+					onToggleTagFilter={search.toggleTagFilter}
+					historyOpen={state.historyOpen}
+					hasHistory={state.recentQueries.length > 0}
+					onToggleHistory={search.toggleHistory}
 				/>
-			)}
-			<SearchStatus status={state.status} retryAttempt={state.retryAttempt} resultCount={state.results.length} />
-			<SearchResults
-				state={state}
-				onRetry={search.retry}
-			/>
-		</div>
+				{state.historyOpen && state.recentQueries.length > 0 && (
+					<SearchHistory
+						queries={state.recentQueries}
+						onSelect={search.selectHistoryQuery}
+					/>
+				)}
+				{state.tagFilterOpen && (
+					<TagFilterPanel
+						tagCache={state.tagCache}
+						selectedTags={state.selectedTags}
+						onAddTag={search.addTag}
+						onRemoveTag={search.removeTag}
+					/>
+				)}
+				<SearchStatus status={state.status} retryAttempt={state.retryAttempt} resultCount={state.results.length} />
+				<SearchResults
+					state={state}
+					onRetry={search.retry}
+				/>
+			</div>
+		</ErrorBoundary>
 	);
 }
 
@@ -435,18 +437,26 @@ function Snippet({ text, query }: { text: string; query: string }) {
 
 	useEffect(() => {
 		if (!ref.current) return;
-		ref.current.empty();
 
-		const maxLen = 250;
-		let snippet = text.replace(/\n{3,}/g, '\n\n').trim();
-		if (snippet.length > maxLen) {
-			snippet = snippet.slice(0, maxLen) + '...';
+		try {
+			ref.current.empty();
+
+			const maxLen = 250;
+			let snippet = text.replace(/\n{3,}/g, '\n\n').trim();
+			if (snippet.length > maxLen) {
+				snippet = snippet.slice(0, maxLen) + '...';
+			}
+
+			MarkdownRenderer.render(app, snippet, ref.current, '', component);
+
+			// Highlight query terms
+			highlightTerms(ref.current, query);
+		} catch {
+			// Prevent markdown rendering errors from crashing the view
+			if (ref.current) {
+				ref.current.textContent = text.slice(0, 250);
+			}
 		}
-
-		MarkdownRenderer.render(app, snippet, ref.current, '', component);
-
-		// Highlight query terms
-		highlightTerms(ref.current, query);
 	}, [text, query, app, component]);
 
 	return <div className="lumen-result-snippet" ref={ref} />;

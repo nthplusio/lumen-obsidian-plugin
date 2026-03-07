@@ -4017,3 +4017,32 @@
 	text-decoration: none;
 	color: var(--text-on-accent);
 }
+
+/* ============================================
+   Error Boundary
+   ============================================ */
+
+.lumen-error-boundary {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 24px;
+	text-align: center;
+	color: var(--text-muted);
+	gap: 12px;
+}
+
+.lumen-error-boundary p {
+	margin: 0;
+	font-size: var(--font-ui-small);
+}
+
+.lumen-error-boundary button {
+	padding: 6px 16px;
+	border-radius: 4px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
