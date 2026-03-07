@@ -149,7 +149,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 					'Type a message and press Enter to send. Responses stream in real-time with Markdown formatting.',
 					'Each conversation is saved and can be resumed later from the conversation list.',
 					'Use "Lumen: New chat" to start a fresh conversation.',
-					'The active note\'s content is automatically included as context when you ask a question.',
+					'Click the note icon next to the input to include the active note as context for your question.',
 				],
 			},
 			{ type: 'subheading', text: 'Deep Research Mode' },

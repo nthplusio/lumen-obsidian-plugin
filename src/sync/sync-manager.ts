@@ -25,9 +25,11 @@ import type {
 	SyncManifestResponseV2,
 	LumenSettings,
 } from '../types';
+import { WorkspaceConfirmationError, WorkspaceNameMismatchError } from '../types';
 import { FileHasher } from './file-hasher';
 import { SyncClient } from './sync-client';
 import { ConflictLogger } from './conflict-logger';
+import { WorkspaceConfirmationModal } from './workspace-confirmation-modal';
 import { classifyError } from '../utils/error-classifier';
 import { logger } from '../utils/logger';
 import { isConflictFile, isExcludedByPatterns } from '../utils/exclude-pattern';
@@ -376,14 +378,42 @@ export class SyncManager {
 			const deviceId = crypto.randomUUID();
 			const deviceName = `${Platform.isDesktop ? 'desktop' : 'mobile'}-${deviceId.slice(0, 8)}`;
 			const vaultName = this.plugin.app.vault.getName();
+			const platform = Platform.isDesktop ? 'desktop' : 'mobile';
 
-			const registration = await this.syncClient.register(
-				deviceId,
-				deviceName,
-				this.plugin.manifest.version,
-				vaultName,
-				Platform.isDesktop ? 'desktop' : 'mobile',
-			);
+			let registration;
+			try {
+				registration = await this.syncClient.register(
+					deviceId, deviceName, this.plugin.manifest.version, vaultName, platform,
+				);
+			} catch (error) {
+				if (error instanceof WorkspaceConfirmationError) {
+					logger.info('Workspace confirmation required', error.details);
+					const modal = new WorkspaceConfirmationModal(this.plugin.app, error.details);
+					const confirmedName = await modal.showAndWait();
+
+					if (!confirmedName) {
+						throw new Error('Sync cancelled: workspace confirmation was declined by user');
+					}
+
+					// Retry registration with confirmed workspace name
+					try {
+						registration = await this.syncClient.register(
+							deviceId, deviceName, this.plugin.manifest.version, vaultName, platform, confirmedName,
+						);
+					} catch (retryError) {
+						if (retryError instanceof WorkspaceNameMismatchError) {
+							new Notice(`Workspace name mismatch: expected "${retryError.expected}", got "${retryError.provided}"`, NOTICE_DURATION_ERROR_MS);
+							throw retryError;
+						}
+						throw retryError;
+					}
+				} else if (error instanceof WorkspaceNameMismatchError) {
+					new Notice(`Workspace name mismatch: expected "${error.expected}", got "${error.provided}"`, NOTICE_DURATION_ERROR_MS);
+					throw error;
+				} else {
+					throw error;
+				}
+			}
 
 			// Cache exclude patterns from registration response
 			if (registration.exclude_patterns?.length) {

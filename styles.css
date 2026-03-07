@@ -3727,6 +3727,112 @@
 }
 
 /* ============================================
+   Workspace Confirmation Modal
+   ============================================ */
+
+.lumen-workspace-confirm-modal {
+	padding: 0;
+}
+
+.lumen-workspace-confirm-header {
+	padding: 16px 20px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lumen-workspace-confirm-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.lumen-workspace-confirm-title-row h2 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+}
+
+.lumen-workspace-confirm-icon {
+	color: var(--text-warning);
+}
+
+.lumen-workspace-confirm-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.lumen-workspace-confirm-description {
+	padding: 12px 20px;
+}
+
+.lumen-workspace-confirm-description p {
+	margin: 0 0 8px;
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+}
+
+.lumen-workspace-confirm-description ul {
+	margin: 0 0 12px;
+	padding-left: 20px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.lumen-workspace-confirm-input-container {
+	padding: 0 20px 12px;
+}
+
+.lumen-workspace-confirm-input {
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.lumen-workspace-confirm-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.lumen-workspace-confirm-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 12px 20px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.lumen-workspace-confirm-btn {
+	padding: 6px 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: transparent;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	transition: background 100ms ease, border-color 100ms ease;
+}
+
+.lumen-workspace-confirm-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.lumen-workspace-confirm-btn-primary {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.lumen-workspace-confirm-btn-primary:hover {
+	background: var(--interactive-accent-hover);
+}
+
+.lumen-workspace-confirm-btn-primary:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* ============================================
    Tool Progress (Chat Streaming)
    ============================================ */
 
@@ -3850,4 +3956,64 @@
 .is-mobile .lumen-chat-note-context-toggle {
 	width: 44px;
 	height: 44px;
+}
+
+/* ============================================================================
+   Upgrade Required View
+   ============================================================================ */
+
+.lumen-upgrade-required {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 32px 24px;
+	text-align: center;
+	min-height: 100%;
+}
+
+.lumen-upgrade-required-icon {
+	margin-bottom: 16px;
+}
+
+.lumen-upgrade-required-icon svg {
+	width: 48px;
+	height: 48px;
+	color: var(--text-faint);
+}
+
+.lumen-upgrade-required-title {
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	margin: 0 0 8px 0;
+}
+
+.lumen-upgrade-required-desc {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	margin: 0 0 24px 0;
+	max-width: 280px;
+	line-height: 1.5;
+}
+
+.lumen-upgrade-required-cta {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 8px 20px;
+	border-radius: 6px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	cursor: pointer;
+	text-decoration: none;
+	transition: opacity 150ms ease;
+}
+
+.lumen-upgrade-required-cta:hover {
+	opacity: 0.9;
+	text-decoration: none;
+	color: var(--text-on-accent);
 }

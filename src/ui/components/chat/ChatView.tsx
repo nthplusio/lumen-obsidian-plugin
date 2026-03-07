@@ -13,11 +13,10 @@ import { LoadingDots, SourceChips } from '../shared';
 export function ChatView() {
 	const chat = useChat();
 	const { state } = chat;
+	const { planTier } = usePlugin();
 
-	// Refresh plan gating when the view mounts
-	useEffect(() => {
-		chat.refreshPlanGating();
-	}, []);
+	// Deep research toggle only for pro tier (free tier has limited turns)
+	const canDeepResearch = planTier === 'pro';
 
 	return (
 		<div className="lumen-chat-view">
@@ -49,7 +48,7 @@ export function ChatView() {
 			/>
 			<ChatInputArea
 				status={state.status}
-				canDeepResearch={state.canDeepResearch}
+				canDeepResearch={canDeepResearch}
 				deepResearchEnabled={state.deepResearchEnabled}
 				activeNoteContextEnabled={state.activeNoteContextEnabled}
 				activeNotePath={state.activeNotePath}
@@ -580,6 +579,15 @@ function ChatInputArea({
 			</div>
 			<div className="lumen-chat-button-row">
 				<div className="lumen-chat-button-group-left">
+					{canDeepResearch && (
+						<button
+							className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
+							aria-label="Toggle Deep Research"
+							aria-pressed={deepResearchEnabled}
+							onClick={onToggleDeepResearch}
+							ref={sparklesRef}
+						/>
+					)}
 					{activeNotePath && (
 						<button
 							className={`lumen-chat-note-context-toggle ${activeNoteContextEnabled ? 'is-active' : ''}`}
@@ -588,15 +596,6 @@ function ChatInputArea({
 							onClick={onToggleActiveNoteContext}
 							ref={noteIconRef}
 							title={activeNoteContextEnabled ? `Context: ${activeFileName}` : 'Include active note as context'}
-						/>
-					)}
-					{canDeepResearch && (
-						<button
-							className={`lumen-chat-deep-research-toggle ${deepResearchEnabled ? 'is-active' : ''}`}
-							aria-label="Toggle Deep Research"
-							aria-pressed={deepResearchEnabled}
-							onClick={onToggleDeepResearch}
-							ref={sparklesRef}
 						/>
 					)}
 				</div>

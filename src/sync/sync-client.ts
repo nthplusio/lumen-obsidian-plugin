@@ -23,6 +23,7 @@ import type {
 	PluginRegistrationResponse,
 	SyncStatusResponse,
 } from '../types';
+import { WorkspaceConfirmationError, WorkspaceNameMismatchError } from '../types';
 import { LumenHttpClient } from '../http-client';
 import { logger } from '../utils/logger';
 
@@ -55,23 +56,57 @@ export class SyncClient extends LumenHttpClient {
 		pluginVersion: string,
 		vaultName: string,
 		platform: string = 'unknown',
+		confirmWorkspaceName?: string,
 	): Promise<PluginRegistrationResponse> {
 		const url = this.buildUrl('sync/register');
 
 		logger.debug('Registering plugin:', { deviceId, deviceName, vaultName });
 
+		const body: Record<string, string> = {
+			device_id: deviceId,
+			device_name: deviceName,
+			plugin_version: pluginVersion,
+			vault_name: vaultName,
+			platform,
+		};
+		if (confirmWorkspaceName) {
+			body.confirm_workspace_name = confirmWorkspaceName;
+		}
+
+		// throw: false — we need to inspect 409 responses for workspace confirmation
 		const response = await requestUrl({
 			url,
 			method: 'POST',
 			headers: this.headers,
-			body: JSON.stringify({
-				device_id: deviceId,
-				device_name: deviceName,
-				plugin_version: pluginVersion,
-				vault_name: vaultName,
-				platform,
-			}),
+			body: JSON.stringify(body),
+			throw: false,
 		});
+
+		if (response.status === 409) {
+			const json = response.json as Record<string, unknown> | undefined;
+			const errorCode = json?.error_code ?? json?.code;
+
+			if (errorCode === 'WORKSPACE_NAME_MISMATCH') {
+				throw new WorkspaceNameMismatchError(
+					(json?.message as string) || 'Workspace name does not match',
+					(json?.expected as string) || '',
+					(json?.provided as string) || confirmWorkspaceName || '',
+				);
+			}
+
+			// Default 409: WORKSPACE_CONFIRMATION_REQUIRED
+			const details = (json?.details ?? json) as Record<string, unknown>;
+			throw new WorkspaceConfirmationError(
+				(json?.message as string) || 'Workspace confirmation required',
+				{
+					workspaceName: (details?.workspace_name as string) || '',
+					workspaceId: (details?.workspace_id as string) || '',
+					existingFileCount: (details?.existing_file_count as number) || 0,
+					existingSources: (details?.existing_sources as string[]) || [],
+					existingDeviceCount: (details?.existing_device_count as number) || 0,
+				},
+			);
+		}
 
 		if (response.status !== 201) {
 			throw new Error(

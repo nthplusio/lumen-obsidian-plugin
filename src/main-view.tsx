@@ -20,6 +20,7 @@ export class LumenMainView extends ItemView {
 	private plugin: LumenPlugin;
 	private reactRoot: Root | null = null;
 	private unsubSyncState: (() => void) | null = null;
+	private unsubPlanChange: (() => void) | null = null;
 	appRef = createRef<LumenAppHandle>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: LumenPlugin) {
@@ -60,6 +61,9 @@ export class LumenMainView extends ItemView {
 						syncState: this.plugin.currentSyncState,
 						syncProgress: this.plugin.currentSyncProgress,
 						indexingProgress: this.plugin.currentIndexingProgress,
+						planTier: this.plugin.currentPlanTier,
+						planLoaded: this.plugin.planLoaded,
+						planFetchFailed: this.plugin.planFetchFailed,
 					}}
 				/>,
 			);
@@ -67,13 +71,16 @@ export class LumenMainView extends ItemView {
 
 		render();
 
-		// Re-render when sync state changes so the strip updates
+		// Re-render when sync state or plan changes
 		this.unsubSyncState = this.plugin.onSyncStateChange(() => render());
+		this.unsubPlanChange = this.plugin.onPlanChange(() => render());
 	}
 
 	async onClose(): Promise<void> {
 		this.unsubSyncState?.();
 		this.unsubSyncState = null;
+		this.unsubPlanChange?.();
+		this.unsubPlanChange = null;
 		this.reactRoot?.unmount();
 		this.reactRoot = null;
 	}

@@ -142,7 +142,7 @@ export function parseConversationSSE(buffer: string): ConversationSSEResult {
 				metadata = {
 					sources,
 					tokenUsage: tokenUsage
-						? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+						? { input: (tokenUsage['input_tokens'] as number) ?? 0, output: (tokenUsage['output_tokens'] as number) ?? 0 }
 						: undefined,
 					toolsUsed: Array.isArray(rawToolsUsed)
 						? rawToolsUsed.filter(t => typeof t['name'] === 'string').map(t => ({ name: t['name'] as string }))
@@ -284,7 +284,7 @@ export class SSEStreamParser {
 					event.metadata = {
 						sources: event.sources ?? [],
 						tokenUsage: tokenUsage
-							? { input: (tokenUsage['input'] as number) ?? 0, output: (tokenUsage['output'] as number) ?? 0 }
+							? { input: (tokenUsage['input_tokens'] as number) ?? 0, output: (tokenUsage['output_tokens'] as number) ?? 0 }
 							: undefined,
 						toolsUsed: Array.isArray(rawToolsUsed)
 							? rawToolsUsed.filter(t => typeof t['name'] === 'string').map(t => ({ name: t['name'] as string }))

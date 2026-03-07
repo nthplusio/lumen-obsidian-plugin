@@ -26,13 +26,22 @@ export class ApiClient extends LumenHttpClient {
 		this.serverUrl = serverUrl;
 	}
 
-	/** Test connectivity by calling GET /health */
+	/** Test connectivity and verify the API key is valid */
 	async testConnection(): Promise<ServerStatus> {
 		const response = await requestUrl({
 			url: `${this.baseUrl}/health`,
 			method: 'GET',
 			headers: this.headers,
 		});
+
+		// /health may not validate auth — hit an authenticated endpoint
+		// to confirm the API key is accepted by the server
+		await requestUrl({
+			url: `${this.baseUrl}/api/tags`,
+			method: 'GET',
+			headers: this.headers,
+		});
+
 		return response.json as ServerStatus;
 	}
 
@@ -53,14 +62,17 @@ export class ApiClient extends LumenHttpClient {
 	): Promise<SearchResult[]> {
 		const body: Record<string, unknown> = { query };
 		if (options.limit !== undefined) body['limit'] = options.limit;
-		if (options.tags?.length) body['tags'] = options.tags;
-		if (options.dateAfter) body['date_after'] = options.dateAfter;
-		if (options.dateBefore) body['date_before'] = options.dateBefore;
-		if (options.folder) body['folder'] = options.folder;
-		if (options.fileType) body['file_type'] = options.fileType;
-		if (options.hasLinks !== undefined) body['has_links'] = options.hasLinks;
 		if (options.hybrid) body['hybrid'] = true;
 		if (options.bm25_weight !== undefined) body['bm25_weight'] = options.bm25_weight;
+
+		const filters: Record<string, unknown> = {};
+		if (options.tags?.length) filters['tags'] = options.tags;
+		if (options.dateAfter) filters['date_after'] = options.dateAfter;
+		if (options.dateBefore) filters['date_before'] = options.dateBefore;
+		if (options.folder) filters['folder'] = options.folder;
+		if (options.fileType) filters['file_type'] = options.fileType;
+		if (options.hasLinks !== undefined) filters['has_links'] = options.hasLinks;
+		if (Object.keys(filters).length > 0) body['filters'] = filters;
 
 		const response = await requestUrl({
 			url: `${this.baseUrl}/api/search`,

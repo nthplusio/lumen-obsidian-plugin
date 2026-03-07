@@ -19,6 +19,7 @@ import { SearchView } from './components/search/SearchView';
 import { ChatView } from './components/chat/ChatView';
 import { RelatedNotesView } from './components/related/RelatedNotesView';
 import { OnboardingView } from './components/onboarding/OnboardingView';
+import { UpgradeRequiredView } from './components/UpgradeRequiredView';
 import { ConflictBanner } from './components/ConflictBanner';
 import { SidebarHeader } from './components/SidebarHeader';
 import { SyncStatusStrip } from './components/SyncStatusStrip';
@@ -63,6 +64,8 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 		}, []);
 
 		const showSyncStrip = !!context.plugin.syncManager;
+		// Chat requires a subscription (free+); search and related have no server-side gate
+		const chatNeedsUpgrade = context.planLoaded && !context.planFetchFailed && context.planTier === null;
 
 		if (!configured) {
 			return (
@@ -81,7 +84,7 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 				<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
 				<ConflictBanner />
 				{activeMode === 'search' && <SearchView />}
-				{activeMode === 'chat' && <ChatView />}
+				{activeMode === 'chat' && (chatNeedsUpgrade ? <UpgradeRequiredView feature="chat" /> : <ChatView />)}
 				{activeMode === 'related' && <RelatedNotesView />}
 			</PluginProvider>
 		);

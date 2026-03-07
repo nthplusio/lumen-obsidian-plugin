@@ -1,74 +1,86 @@
 ---
-description: Commit, bump version, rebuild, tag, and push a release
+description: Commit, bump version, rebuild, tag, and push a release. Automatically detects release channel from branch — stable releases from main, beta prereleases from staging. Handles semver, beta numbering (e.g. 1.11.0-beta.1), manifest-beta.json for BRAT, and GitHub Actions release workflow.
 allowed-tools: Bash, Read, Edit, Glob, Grep, AskUserQuestion
 ---
 
-You are releasing the Lumen Obsidian plugin. Follow these steps precisely:
+Release the Lumen Obsidian plugin. Follow these steps precisely.
+
+## Step 0: Detect release channel
+
+```bash
+git branch --show-current
+```
+
+| Branch    | Channel | Version format        | Manifest asset       | versions.json |
+|-----------|---------|-----------------------|----------------------|---------------|
+| `main`    | stable  | `1.11.0`              | `manifest.json`      | Updated       |
+| `staging` | beta    | `1.11.0-beta.1`       | `manifest-beta.json` | NOT updated   |
+
+If on any other branch, warn and stop.
 
 ## Step 1: Check working state
 
-Run `git status` and `git diff --stat` to see what's changed. If there are no changes to commit (clean tree, nothing staged or unstaged), skip to Step 3 to see if there's an unpushed commit to push. If there's truly nothing to do, tell the user and stop.
+Run `git status` and `git diff --stat`. If clean, skip to Step 3 for unpushed commits. If truly nothing to do, tell the user and stop.
 
 ## Step 2: Commit changes
 
-1. Run `git diff` and `git diff --cached` to review all changes
-2. Stage the relevant files with `git add` (be specific — never use `git add -A`)
-3. Write a clear commit message in imperative mood summarizing the changes
-4. Commit with `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
-5. Use a HEREDOC for the commit message
+1. Run `git diff` and `git diff --cached` to review changes
+2. Stage relevant files with `git add` (never `git add -A`)
+3. Commit in imperative mood with `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>` using a HEREDOC
 
 ## Step 3: Determine version bump
 
-Read the current version from `package.json`. Then analyze ALL commits since the last version tag to determine the bump type:
-
 ```bash
-# Find latest version tag
 git tag --sort=-v:refname | head -5
-# Show commits since that tag
 git log <last-tag>..HEAD --oneline
 ```
 
-Apply semver rules:
-- **patch** (1.3.0 -> 1.3.1): Bug fixes, minor improvements, dependency updates, CI changes
-- **minor** (1.3.0 -> 1.4.0): New features, new commands, new UI components, significant behavior changes
-- **major** (1.3.0 -> 2.0.0): Breaking changes to settings, API, or data format
+Semver rules:
+- **patch**: Bug fixes, minor improvements, dependency updates, CI changes
+- **minor**: New features, new commands, new UI components, significant behavior changes
+- **major**: Breaking changes to settings, API, or data format
 
-Present your recommendation to the user with `AskUserQuestion`:
-- Show the commits being included
-- Explain why you chose the bump level
-- Offer patch/minor/major as options with your recommendation marked
+**Beta (staging)**: Apply the same semver rules for the base version, then append `-beta.N`. Increment N if a beta tag already exists for that base version.
+
+Present recommendation via `AskUserQuestion` showing commits, reasoning, and version options.
 
 ## Step 4: Bump version
 
-After the user confirms, run these commands in sequence:
-
 ```bash
-# Update package.json version
 npm version <new-version> --no-git-tag-version
-
-# Sync manifest.json and versions.json
 node version-bump.mjs
 ```
 
-Then verify all three files have the correct version:
-- `package.json` — `"version": "<new>"`
-- `manifest.json` — `"version": "<new>"`
-- `versions.json` — has entry for `"<new>"`
+**Important**: `npm version` requires the full version string including `-beta.N` for prereleases.
+
+Verify:
+- `package.json` and `manifest.json` both show the new version
+- **Stable only**: `versions.json` has an entry for the new version
+- **Beta only**: `manifest-beta.json` exists with the new version; `versions.json` is unchanged
 
 ## Step 5: Verify build
 
-Run `npm run build` to verify type-checking passes and the build succeeds. This is a local sanity check only — `main.js` is gitignored and built fresh by the release workflow in CI.
+```bash
+npm run build
+```
+
+Local sanity check only — `main.js` is gitignored and built fresh by CI.
 
 ## Step 6: Commit version bump
 
 ```bash
+# Stable:
 git add package.json manifest.json versions.json
+
+# Beta (manifest-beta.json is gitignored):
+git add package.json manifest.json
+```
+
+```bash
 git commit -m "Release <new-version>"
 ```
 
-Do NOT add `Co-Authored-By` to the release commit — keep it clean for `--generate-notes`.
-
-Do NOT stage `main.js` — it is gitignored. The release workflow builds it from source.
+No `Co-Authored-By` on the release commit — keeps `--generate-notes` clean. Never stage `main.js`.
 
 ## Step 7: Tag and push
 
@@ -77,16 +89,22 @@ git tag <new-version>
 git push && git push --tags
 ```
 
-The tag push triggers `.github/workflows/release.yml` which:
-1. Checks out the tagged commit
-2. Runs `npm ci`, `npm run test:run`, `npm run build`
-3. Creates a GitHub Release via `gh release create` with `main.js`, `manifest.json`, and `styles.css` as assets
-4. Release notes are auto-generated from commits via `--generate-notes`
+This triggers `.github/workflows/release.yml` which builds, tests, and creates a GitHub Release (with `--prerelease` for beta tags).
 
-## Step 8: Confirm
+## Step 8: Update manifest on main (beta only)
 
-Tell the user:
-- The new version number
-- How many commits are included in this release
-- That the GitHub Actions release workflow has been triggered
-- The URL: `https://github.com/nthplusio/lumen-obsidian-plugin/actions`
+BRAT reads `manifest-beta.json` from the repo's default branch (`main`). After a beta release, update it:
+
+```bash
+git stash
+git checkout main
+git checkout staging -- manifest-beta.json
+git commit -m "Update manifest-beta.json to <new-version>"
+git push
+git checkout staging
+git stash pop  # only if stash was created
+```
+
+## Step 9: Confirm
+
+Tell the user: version number, channel (stable/beta), commit count, and link to https://github.com/nthplusio/lumen-obsidian-plugin/actions

@@ -25,7 +25,7 @@ import { logger } from './utils/logger';
 import { networkStatus } from './utils/network-status';
 import { ConflictResolutionModal } from './sync/conflict-resolution-modal';
 import type { ConflictResolution } from './sync/conflict-resolution-modal';
-import { DEFAULT_SETTINGS, type SyncState, type UnresolvedConflict, type LumenSettings } from './types';
+import { DEFAULT_SETTINGS, type SyncState, type UnresolvedConflict, type LumenSettings, type PlanTier } from './types';
 import type { SyncProgress, IndexingProgress } from './ui/contexts/PluginContext';
 
 export default class LumenPlugin extends Plugin {
@@ -79,6 +79,39 @@ export default class LumenPlugin extends Plugin {
 
 	private notifySyncStateListeners(): void {
 		for (const cb of this.syncStateListeners) cb();
+	}
+
+	// Plan state observable for React UI (feature gating)
+	currentPlanTier: PlanTier = null;
+	planLoaded = false;
+	planFetchFailed = false;
+	private planListeners: Array<() => void> = [];
+
+	/** Register a listener for plan state changes (returns unsubscribe fn) */
+	onPlanChange(cb: () => void): () => void {
+		this.planListeners.push(cb);
+		return () => {
+			this.planListeners = this.planListeners.filter(l => l !== cb);
+		};
+	}
+
+	private notifyPlanListeners(): void {
+		for (const cb of this.planListeners) cb();
+	}
+
+	/** Fetch workspace plan and update state. Allows access on failure. */
+	async refreshPlan(): Promise<void> {
+		if (!this.chatClient) return;
+		try {
+			const info = await this.chatClient.getWorkspacePlan();
+			this.currentPlanTier = info.plan;
+			this.planLoaded = true;
+			this.planFetchFailed = false;
+		} catch {
+			this.planFetchFailed = true;
+			this.planLoaded = true;
+		}
+		this.notifyPlanListeners();
 	}
 
 	/** Trigger a manual sync from the UI */
@@ -194,7 +227,7 @@ export default class LumenPlugin extends Plugin {
 				this.settings.serverUrl,
 			);
 			// Pre-cache plan info (non-blocking)
-			this.chatClient.getWorkspacePlan().catch(() => {});
+			this.refreshPlan();
 		}
 
 		// Initialize sync if configured
@@ -417,6 +450,9 @@ export default class LumenPlugin extends Plugin {
 				this.settings.serverUrl,
 			);
 		}
+
+		// Refresh plan after credentials change (non-blocking)
+		this.refreshPlan();
 
 		// Update sync components if they exist
 		if (this.syncClient) {

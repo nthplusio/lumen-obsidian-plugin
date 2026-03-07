@@ -101,6 +101,7 @@ vi.mock('obsidian', () => ({
 		addButton(cb: Function) {
 			const b: any = {
 				_text: '', _cta: false, _disabled: false, _onClick: null,
+				buttonEl: createMockElement('button'),
 				setButtonText(t: string) { this._text = t; return this; },
 				setCta() { this._cta = true; return this; },
 				setWarning() { return this; },
@@ -413,10 +414,7 @@ describe('LumenSettingTab', () => {
 			tab.display();
 
 			const s = findSetting('Test Connection');
-			await s._buttons[0]._onClick();
-			expect(Notice).toHaveBeenCalledWith(
-				expect.stringContaining('API key'),
-			);
+			expect(s._buttons[0]._disabled).toBe(true);
 			expect(mockPlugin.apiClient.testConnection).not.toHaveBeenCalled();
 		});
 	});

@@ -151,6 +151,7 @@ export interface SyncStatusResponse {
 	last_sync_at: string | null;
 	cursor: string | null;
 	file_count: number;
+	file_type_counts?: Record<string, number>;
 	indexing_status: {
 		active: boolean;
 		progress: number;
@@ -160,6 +161,9 @@ export interface SyncStatusResponse {
 	exclude_patterns: string[];
 	max_file_size_bytes: number;
 	denied_extensions: string[];
+	sync_enabled: boolean;
+	sync_interval_minutes: number;
+	event_sync_enabled: boolean;
 }
 
 // ============================================================================
@@ -237,8 +241,8 @@ export interface ChatResponse {
 // Plan / Subscription Types
 // ============================================================================
 
-/** Workspace subscription tier */
-export type PlanTier = 'starter' | 'plus' | 'pro' | null;
+/** Workspace subscription tier (free/pro since 2026-03-05 migration) */
+export type PlanTier = 'free' | 'pro' | null;
 
 /** Cached workspace plan info */
 export interface WorkspacePlanInfo {
@@ -272,6 +276,7 @@ export interface ConversationListResponse {
 export interface SendMessageRequest {
 	message: string;
 	deep_research?: boolean;
+	skill_hints?: string[];
 }
 
 // ============================================================================
@@ -312,6 +317,39 @@ export interface RateLimitError {
 	limit: number;
 	remaining: number;
 	resets_at: string;
+}
+
+/** Details returned by the server when workspace confirmation is needed */
+export interface WorkspaceConfirmationDetails {
+	workspaceName: string;
+	workspaceId: string;
+	existingFileCount: number;
+	existingSources: string[];
+	existingDeviceCount: number;
+}
+
+/** Thrown when server returns 409 WORKSPACE_CONFIRMATION_REQUIRED */
+export class WorkspaceConfirmationError extends Error {
+	readonly details: WorkspaceConfirmationDetails;
+
+	constructor(message: string, details: WorkspaceConfirmationDetails) {
+		super(message);
+		this.name = 'WorkspaceConfirmationError';
+		this.details = details;
+	}
+}
+
+/** Thrown when server returns 409 WORKSPACE_NAME_MISMATCH */
+export class WorkspaceNameMismatchError extends Error {
+	readonly expected: string;
+	readonly provided: string;
+
+	constructor(message: string, expected: string, provided: string) {
+		super(message);
+		this.name = 'WorkspaceNameMismatchError';
+		this.expected = expected;
+		this.provided = provided;
+	}
 }
 
 /** Thrown when server returns 403 with plan_upgrade_required */

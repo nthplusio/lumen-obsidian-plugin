@@ -165,7 +165,7 @@ describe('parseConversationSSE', () => {
 	it('extracts lumen_metadata with sources and token usage', () => {
 		const buffer = [
 			'event: lumen_metadata',
-			'data: {"sources":[{"path":"notes/a.md","score":0.95},{"path":"notes/b.md","score":0.82}],"token_usage":{"input":150,"output":200},"turns_used":2,"turns_remaining":8}',
+			'data: {"sources":[{"path":"notes/a.md","score":0.95},{"path":"notes/b.md","score":0.82}],"token_usage":{"input_tokens":150,"output_tokens":200},"turns_used":2,"turns_remaining":8}',
 			'',
 			'',
 		].join('\n');
@@ -220,7 +220,7 @@ describe('parseConversationSSE', () => {
 			'data: {"type":"content_block_stop"}',
 			'',
 			'event: lumen_metadata',
-			'data: {"sources":[{"path":"file.md","score":0.9}],"token_usage":{"input":10,"output":20},"turns_used":1,"turns_remaining":9}',
+			'data: {"sources":[{"path":"file.md","score":0.9}],"token_usage":{"input_tokens":10,"output_tokens":20},"turns_used":1,"turns_remaining":9}',
 			'',
 			'event: message_stop',
 			'data: {"type":"message_stop"}',
@@ -293,7 +293,7 @@ describe('parseConversationSSE', () => {
 	it('filters invalid source entries', () => {
 		const buffer = [
 			'event: lumen_metadata',
-			'data: {"sources":[{"path":"valid.md","score":0.9},{"invalid":true},{"path":"also-valid.md","score":0.5}],"token_usage":{"input":0,"output":0},"turns_used":0,"turns_remaining":0}',
+			'data: {"sources":[{"path":"valid.md","score":0.9},{"invalid":true},{"path":"also-valid.md","score":0.5}],"token_usage":{"input_tokens":0,"output_tokens":0},"turns_used":0,"turns_remaining":0}',
 			'',
 			'',
 		].join('\n');
@@ -327,7 +327,7 @@ describe('parseConversationSSE', () => {
 	it('extracts tools_used from lumen_metadata', () => {
 		const buffer = [
 			'event: lumen_metadata',
-			'data: {"sources":[],"token_usage":{"input":100,"output":50},"tools_used":[{"name":"semantic_search"},{"name":"get_document_context"}],"turns_used":1,"turns_remaining":9}',
+			'data: {"sources":[],"token_usage":{"input_tokens":100,"output_tokens":50},"tools_used":[{"name":"semantic_search"},{"name":"get_document_context"}],"turns_used":1,"turns_remaining":9}',
 			'',
 			'',
 		].join('\n');
@@ -344,7 +344,7 @@ describe('parseConversationSSE', () => {
 	it('handles lumen_metadata without tools_used', () => {
 		const buffer = [
 			'event: lumen_metadata',
-			'data: {"sources":[],"token_usage":{"input":10,"output":20},"turns_used":0,"turns_remaining":10}',
+			'data: {"sources":[],"token_usage":{"input_tokens":10,"output_tokens":20},"turns_used":0,"turns_remaining":10}',
 			'',
 			'',
 		].join('\n');

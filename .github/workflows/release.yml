@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-beta.*"
 
 permissions:
   contents: write
@@ -28,12 +29,24 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Generate beta manifest
+        if: contains(github.ref, '-beta.')
+        run: node version-bump.mjs
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title "$tag" \
-            --generate-notes \
-            main.js manifest.json styles.css
+          if [[ "$tag" == *-beta.* ]]; then
+            gh release create "$tag" \
+              --title "$tag" \
+              --generate-notes \
+              --prerelease \
+              main.js manifest.json manifest-beta.json styles.css
+          else
+            gh release create "$tag" \
+              --title "$tag" \
+              --generate-notes \
+              main.js manifest.json styles.css
+          fi
