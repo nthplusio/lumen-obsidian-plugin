@@ -7,6 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { setIcon } from 'obsidian';
+import { usePlugin } from '../contexts/PluginContext';
 import { LUMEN_API_URL } from '../../types';
 
 interface UpgradeRequiredViewProps {
@@ -14,6 +15,7 @@ interface UpgradeRequiredViewProps {
 }
 
 export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
+	const { plugin } = usePlugin();
 	const iconRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -21,6 +23,7 @@ export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
 	}, []);
 
 	const featureLabel = feature === 'chat' ? 'Chat' : feature;
+	const baseUrl = plugin.settings.serverUrl || LUMEN_API_URL;
 
 	return (
 		<div className="lumen-upgrade-required">
@@ -33,7 +36,7 @@ export function UpgradeRequiredView({ feature }: UpgradeRequiredViewProps) {
 			</p>
 			<a
 				className="lumen-upgrade-required-cta"
-				href={LUMEN_API_URL}
+				href={baseUrl}
 				target="_blank"
 				rel="noopener noreferrer"
 			>
