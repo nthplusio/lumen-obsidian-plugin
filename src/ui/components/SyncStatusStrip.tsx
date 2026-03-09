@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { setIcon } from 'obsidian';
 import { usePlugin } from '../contexts/PluginContext';
+import { useSyncState } from '../hooks/useSyncState';
 import { STATE_ICONS, STATE_CLASSES } from '../../sync/sync-status-bar';
 import type { SyncState } from '../../types';
 
@@ -52,10 +53,11 @@ function getStateText(
 }
 
 export function SyncStatusStrip() {
-	const { plugin, syncState, syncProgress, indexingProgress } = usePlugin();
+	const { plugin } = usePlugin();
+	const { syncState, syncProgress, indexingProgress } = useSyncState();
 	const iconRef = useRef<HTMLSpanElement>(null);
 
-	const state = syncState ?? 'idle';
+	const state = syncState;
 	const isIndexing = !!indexingProgress;
 
 	// Determine icon and text

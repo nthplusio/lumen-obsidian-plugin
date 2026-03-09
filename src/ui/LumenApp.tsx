@@ -13,7 +13,8 @@
 
 import { useCallback, useEffect, useImperativeHandle, useState, forwardRef } from 'react';
 import type { PluginContextValue } from './contexts/PluginContext';
-import { PluginProvider } from './contexts/PluginContext';
+import { PluginProvider, usePlugin } from './contexts/PluginContext';
+import { usePlanState } from './hooks/usePlanState';
 import { TabBar, type ViewMode } from './components/TabBar';
 import { SearchView } from './components/search/SearchView';
 import { ChatView } from './components/chat/ChatView';
@@ -64,10 +65,6 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 			setActiveMode(mode);
 		}, []);
 
-		const showSyncStrip = !!context.plugin.syncManager;
-		// Chat requires a subscription (free+); search and related have no server-side gate
-		const chatNeedsUpgrade = context.planLoaded && !context.planFetchFailed && context.planTier === null;
-
 		if (!configured) {
 			return (
 				<PluginProvider value={context}>
@@ -77,19 +74,42 @@ export const LumenApp = forwardRef<LumenAppHandle, LumenAppProps>(
 			);
 		}
 
-		const syncStrip = showSyncStrip ? <SyncStatusStrip /> : undefined;
-
 		return (
 			<PluginProvider value={context}>
 				<ErrorBoundary>
-					<SidebarHeader syncStrip={syncStrip} />
-					<TabBar activeMode={activeMode} onModeChange={handleModeChange} />
-					<ConflictBanner />
-					{activeMode === 'search' && <SearchView />}
-					{activeMode === 'chat' && (chatNeedsUpgrade ? <UpgradeRequiredView feature="chat" /> : <ChatView />)}
-					{activeMode === 'related' && <RelatedNotesView />}
+					<LumenAppContent activeMode={activeMode} onModeChange={handleModeChange} />
 				</ErrorBoundary>
 			</PluginProvider>
 		);
 	},
 );
+
+/**
+ * Inner content rendered inside PluginProvider so hooks like
+ * usePlanState (which calls usePlugin) have access to context.
+ */
+function LumenAppContent({
+	activeMode,
+	onModeChange,
+}: {
+	activeMode: ViewMode;
+	onModeChange: (mode: ViewMode) => void;
+}) {
+	const { plugin } = usePlugin();
+	const { planTier, planLoaded, planFetchFailed } = usePlanState();
+
+	const showSyncStrip = !!plugin.syncManager;
+	const chatNeedsUpgrade = planLoaded && !planFetchFailed && planTier === null;
+	const syncStrip = showSyncStrip ? <SyncStatusStrip /> : undefined;
+
+	return (
+		<>
+			<SidebarHeader syncStrip={syncStrip} />
+			<TabBar activeMode={activeMode} onModeChange={onModeChange} />
+			<ConflictBanner />
+			{activeMode === 'search' && <SearchView />}
+			{activeMode === 'chat' && (chatNeedsUpgrade ? <UpgradeRequiredView feature="chat" /> : <ChatView />)}
+			{activeMode === 'related' && <RelatedNotesView />}
+		</>
+	);
+}

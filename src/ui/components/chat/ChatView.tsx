@@ -7,13 +7,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MarkdownRenderer, Notice, setIcon } from 'obsidian';
 import type { ActiveToolUse, ChatMessage, ChatSource, ConversationSummary, ThinkingState } from '../../../types';
 import { usePlugin } from '../../contexts/PluginContext';
+import { usePlanState } from '../../hooks/usePlanState';
 import { useChat } from '../../hooks/useChat';
 import { LoadingDots, SourceChips } from '../shared';
 
 export function ChatView() {
 	const chat = useChat();
 	const { state } = chat;
-	const { planTier } = usePlugin();
+	const { planTier } = usePlanState();
 
 	// Deep research toggle only for pro tier (free tier has limited turns)
 	const canDeepResearch = planTier === 'pro';
