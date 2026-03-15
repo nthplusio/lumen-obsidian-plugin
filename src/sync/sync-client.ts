@@ -84,18 +84,18 @@ export class SyncClient extends LumenHttpClient {
 
 		if (response.status === 409) {
 			const json = response.json as Record<string, unknown> | undefined;
-			const errorCode = json?.error_code ?? json?.code;
+			const errorCode = json?.error ?? json?.error_code ?? json?.code;
+			const details = (json?.details ?? json) as Record<string, unknown> | undefined;
 
 			if (errorCode === 'WORKSPACE_NAME_MISMATCH') {
 				throw new WorkspaceNameMismatchError(
 					(json?.message as string) || 'Workspace name does not match',
-					(json?.expected as string) || '',
-					(json?.provided as string) || confirmWorkspaceName || '',
+					(details?.expected as string) || '',
+					(details?.provided as string) || confirmWorkspaceName || '',
 				);
 			}
 
 			// Default 409: WORKSPACE_CONFIRMATION_REQUIRED
-			const details = (json?.details ?? json) as Record<string, unknown>;
 			throw new WorkspaceConfirmationError(
 				(json?.message as string) || 'Workspace confirmation required',
 				{
