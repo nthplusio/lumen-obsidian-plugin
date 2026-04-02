@@ -302,8 +302,12 @@ export class SyncClient extends LumenHttpClient {
 
 		if (response.status < 200 || response.status >= 300) {
 			const serverMsg = this.extractErrorMessage(response);
+			const validationDetails = this.extractValidationDetails(response);
 			// Log full response detail — critical for diagnosing proxy/WAF blocks
 			logger.error(`V2 manifest failed (${response.status}):`, serverMsg || '(no body)');
+			if (validationDetails) {
+				logger.error('Validation errors:', validationDetails);
+			}
 			logger.error('Manifest request context:', {
 				fileCount: files.length,
 				deviceId,
@@ -315,8 +319,12 @@ export class SyncClient extends LumenHttpClient {
 			if (response.text && !serverMsg) {
 				logger.error('Raw response:', response.text.slice(0, 500));
 			}
+			// Include validation details in error message so classifier can surface them
+			const detail = validationDetails
+				? `${serverMsg} (${validationDetails})`
+				: serverMsg;
 			const error = new Error(
-				`V2 manifest exchange failed: ${response.status} ${serverMsg}`,
+				`V2 manifest exchange failed: ${response.status} ${detail}`,
 			);
 			(error as Error & { status: number }).status = response.status;
 			(error as Error & { serverMessage?: string }).serverMessage = serverMsg;
@@ -404,6 +412,24 @@ export class SyncClient extends LumenHttpClient {
 			return response.text?.slice(0, 200) ?? '';
 		} catch {
 			return '';
+		}
+	}
+
+	/**
+	 * Extract validation error details from server responses that include
+	 * a `details.errors` object (e.g. Zod validation failures).
+	 * Returns a compact string summary or null if no details found.
+	 */
+	private extractValidationDetails(response: { json?: unknown }): string | null {
+		try {
+			if (!response.json || typeof response.json !== 'object') return null;
+			const obj = response.json as Record<string, unknown>;
+			const details = obj.details as Record<string, unknown> | undefined;
+			if (!details?.errors) return null;
+			// Compact JSON for log readability
+			return JSON.stringify(details.errors).slice(0, 300);
+		} catch {
+			return null;
 		}
 	}
 

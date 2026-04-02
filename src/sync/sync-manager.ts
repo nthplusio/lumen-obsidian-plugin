@@ -1046,11 +1046,13 @@ export class SyncManager {
 		}
 
 		// Tracked deletions since last sync
+		// Sentinel hash: server requires a valid 64-char hex SHA-256 for all entries
+		const DELETE_SENTINEL_HASH = '0'.repeat(64);
 		for (const path of this.deletedPaths) {
 			if (!hashMap.has(path)) {
 				entries.push({
 					path,
-					content_hash: '',
+					content_hash: DELETE_SENTINEL_HASH,
 					modified_at: new Date().toISOString(),
 					size_bytes: 0,
 					action: 'delete',
