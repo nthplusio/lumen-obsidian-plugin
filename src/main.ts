@@ -584,7 +584,9 @@ export default class LumenPlugin extends Plugin {
 		// Check if the server is currently indexing (e.g. from a previous sync)
 		this.syncClient.getSyncStatus().then(status => {
 			if (status.indexing_status.active) this.pollIndexingStatus();
-		}).catch(() => {});
+		}).catch((err) => {
+			logger.debug('Failed to check initial indexing status:', err);
+		});
 
 		this.startBackgroundPoll();
 	}
@@ -616,7 +618,10 @@ export default class LumenPlugin extends Plugin {
 					: 'Vault is up to date.',
 			);
 		} else if (result.errors.length > 0) {
-			new Notice(`Sync failed: ${result.errors[0]}`);
+			const msg = result.errors.length === 1
+				? `Sync failed: ${result.errors[0]}`
+				: `Sync failed with ${result.errors.length} errors: ${result.errors[0]}`;
+			new Notice(msg);
 		}
 	}
 
@@ -624,7 +629,14 @@ export default class LumenPlugin extends Plugin {
 	private pollIndexingStatus(): void {
 		if (this.indexingPollTimer || !this.syncClient) return;
 		const serverTriggered = !this.pluginTriggeredIndexing;
+		const MAX_POLL_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+		const pollStartedAt = Date.now();
 		this.indexingPollTimer = setInterval(async () => {
+			if (Date.now() - pollStartedAt > MAX_POLL_DURATION_MS) {
+				logger.warn('Indexing poll exceeded 30 minute limit — stopping');
+				this.stopIndexingPoll();
+				return;
+			}
 			try {
 				const status = await this.syncClient!.getSyncStatus();
 				if (status.indexing_status.active) {

@@ -14,6 +14,10 @@ import { formatRelativeTime } from './sync/sync-status-bar';
 import { logger } from './utils/logger';
 import type { LogEntryListener } from './utils/logger';
 
+function isValidUrl(value: string): boolean {
+	try { new URL(value); return true; } catch { return false; }
+}
+
 export class LumenSettingTab extends PluginSettingTab {
 	plugin: LumenPlugin;
 	private _activityLogListener: LogEntryListener | null = null;
@@ -249,7 +253,9 @@ export class LumenSettingTab extends PluginSettingTab {
 					.setPlaceholder(LUMEN_API_URL)
 					.setValue(this.plugin.settings.serverUrl)
 					.onChange(async (value) => {
-						this.plugin.settings.serverUrl = value.trim();
+						const trimmed = value.trim();
+						if (trimmed && !isValidUrl(trimmed)) return;
+						this.plugin.settings.serverUrl = trimmed;
 						await this.plugin.saveSettings();
 					});
 			});

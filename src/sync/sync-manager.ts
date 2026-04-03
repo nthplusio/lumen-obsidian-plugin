@@ -316,6 +316,7 @@ export class SyncManager {
 						logger.warn(`410 Gone — resetting sync state and restarting (reset ${resetCount}/${MAX_RESETS})`);
 						this.settings.lastSyncCursor = '';
 						this.settings.lastSyncSeq = 0;
+						await this.plugin.saveData(this.settings);
 						currentRetryCount = 0;
 						continue; // restart the loop
 					}
@@ -738,6 +739,10 @@ export class SyncManager {
 		// Filter server changes when doing full sync — skip files where local hash matches
 		const allServerChanges = v2Response.server_changes ?? [];
 		let changesToProcess = allServerChanges;
+		if (v2Response.requires_full_sync) {
+			logger.info('Server requested full re-sync (change log compacted)');
+			new Notice('Server requested a full re-sync. This may take longer than usual.');
+		}
 		if ((v2Response.requires_full_sync || this.settings.lastSyncSeq === 0) && changesToProcess.length > 0) {
 			changesToProcess = changesToProcess.filter(change => {
 				const local = localManifest.get(change.path);

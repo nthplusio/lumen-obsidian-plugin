@@ -17,12 +17,14 @@ interface Props {
 
 interface State {
 	hasError: boolean;
+	/** Incremented on retry to force children to re-mount */
+	resetKey: number;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-	state: State = { hasError: false };
+	state: State = { hasError: false, resetKey: 0 };
 
-	static getDerivedStateFromError(): State {
+	static getDerivedStateFromError(): Partial<State> {
 		return { hasError: true };
 	}
 
@@ -30,17 +32,21 @@ export class ErrorBoundary extends Component<Props, State> {
 		logger.error(`React error boundary caught: ${error.message}`, info.componentStack ?? '');
 	}
 
+	private handleRetry = () => {
+		this.setState(prev => ({ hasError: false, resetKey: prev.resetKey + 1 }));
+	};
+
 	render() {
 		if (this.state.hasError) {
 			return this.props.fallback ?? (
 				<div className="lumen-error-boundary">
 					<p>Something went wrong rendering this view.</p>
-					<button onClick={() => this.setState({ hasError: false })}>
+					<button onClick={this.handleRetry}>
 						Try again
 					</button>
 				</div>
 			);
 		}
-		return this.props.children;
+		return <div key={this.state.resetKey}>{this.props.children}</div>;
 	}
 }

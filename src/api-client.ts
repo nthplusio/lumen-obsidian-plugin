@@ -28,21 +28,29 @@ export class ApiClient extends LumenHttpClient {
 
 	/** Test connectivity and verify the API key is valid */
 	async testConnection(): Promise<ServerStatus> {
-		const response = await requestUrl({
+		// Use the dedicated auth validation endpoint — verifies the API key
+		// and returns workspace info in one call
+		const authResponse = await requestUrl({
+			url: `${this.baseUrl}/api/auth/validate`,
+			method: 'GET',
+			headers: this.headers,
+		});
+		const auth = authResponse.json as { valid: boolean; workspace?: { id: string; name: string } };
+
+		// Get server health info for version/status display
+		const healthResponse = await requestUrl({
 			url: `${this.baseUrl}/health`,
 			method: 'GET',
 			headers: this.headers,
 		});
+		const status = healthResponse.json as ServerStatus;
 
-		// /health may not validate auth — hit an authenticated endpoint
-		// to confirm the API key is accepted by the server
-		await requestUrl({
-			url: `${this.baseUrl}/api/tags`,
-			method: 'GET',
-			headers: this.headers,
-		});
+		// Prefer workspace ID from auth/validate (more reliable than /health)
+		if (auth.workspace?.id) {
+			status.workspace_id = auth.workspace.id;
+		}
 
-		return response.json as ServerStatus;
+		return status;
 	}
 
 	/** Semantic search across the vault */

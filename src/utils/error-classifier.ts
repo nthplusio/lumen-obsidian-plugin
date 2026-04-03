@@ -65,6 +65,22 @@ function classifyByStatusCode(status: number, msg: string): ClassifiedError | nu
 				statusCode: 401,
 			};
 		case 403:
+			if (msg.includes('DEVICE_NOT_REGISTERED') || msg.includes('Device not registered')) {
+				return {
+					category: 'auth',
+					message: 'Device not registered or revoked. Go to Settings → Lumen → Reset Device to re-register.',
+					retryable: false,
+					statusCode: 403,
+				};
+			}
+			if (msg.includes('Plan upgrade required') || msg.includes('required_plan')) {
+				return {
+					category: 'auth',
+					message: 'This feature requires a plan upgrade. Visit your Lumen dashboard to upgrade.',
+					retryable: false,
+					statusCode: 403,
+				};
+			}
 			return {
 				category: 'auth',
 				message: 'Access denied. Your API key may lack the required permissions.',
@@ -86,6 +102,14 @@ function classifyByStatusCode(status: number, msg: string): ClassifiedError | nu
 				statusCode: 410,
 			};
 		case 413:
+			if (msg.includes('STORAGE_QUOTA_EXCEEDED') || msg.includes('quota')) {
+				return {
+					category: 'validation',
+					message: 'Workspace storage quota exceeded. Free up space or upgrade your plan.',
+					retryable: false,
+					statusCode: 413,
+				};
+			}
 			return {
 				category: 'validation',
 				message: 'File too large for upload. Check server size limits.',
@@ -133,6 +157,22 @@ function classifyByMessage(msg: string): ClassifiedError {
 			statusCode: 401,
 		};
 	}
+	if (msg.includes('DEVICE_NOT_REGISTERED') || msg.includes('Device not registered')) {
+		return {
+			category: 'auth',
+			message: 'Device not registered or revoked. Go to Settings → Lumen → Reset Device to re-register.',
+			retryable: false,
+			statusCode: 403,
+		};
+	}
+	if (msg.includes('Plan upgrade required') || msg.includes('required_plan')) {
+		return {
+			category: 'auth',
+			message: 'This feature requires a plan upgrade. Visit your Lumen dashboard to upgrade.',
+			retryable: false,
+			statusCode: 403,
+		};
+	}
 	if (msg.includes('403') || msg.includes('Forbidden')) {
 		return {
 			category: 'auth',
@@ -165,6 +205,14 @@ function classifyByMessage(msg: string): ClassifiedError {
 			message: 'Sync session expired. A new sync will be started.',
 			retryable: false,
 			statusCode: 410,
+		};
+	}
+	if (msg.includes('STORAGE_QUOTA_EXCEEDED') || msg.includes('quota')) {
+		return {
+			category: 'validation',
+			message: 'Workspace storage quota exceeded. Free up space or upgrade your plan.',
+			retryable: false,
+			statusCode: 413,
 		};
 	}
 	if (msg.includes('413') || msg.includes('Too Large') || msg.includes('FILE_TOO_LARGE')) {

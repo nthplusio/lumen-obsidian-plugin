@@ -140,6 +140,7 @@ export interface PluginRegistrationResponse {
 	api_key: string;
 	api_key_id: string;
 	workspace_id: string;
+	workspace_name?: string;
 	sync_manifest_endpoint: string;
 	max_file_size_bytes: number;
 	denied_extensions: string[];
